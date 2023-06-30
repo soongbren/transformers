@@ -1,0 +1,254 @@
+<!--Hak Cipta 2020 Pasukan HuggingFace. Hak cipta terpelihara.
+
+Dilesenkan di bawah Lesen Apache, Versi 2.0 ("Lesen"); anda tidak boleh menggunakan fail ini kecuali dengan mematuhi
+Lesen. Anda boleh mendapatkan salinan Lesen di
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Melainkan diperlukan oleh undang-undang yang terpakai atau dipersetujui secara bertulis, perisian yang diedarkan di bawah Lesen diedarkan pada
+ASAS "SEBAGAIMANA ADANYA", TANPA WARANTI ATAU SEBARANG JENIS SYARAT, sama ada nyata atau tersirat. Lihat Lesen untuk
+-->
+
+# Bagaimana untuk membuat pipeline tersuai?
+
+Dalam panduan ini, kita akan melihat cara membuat pipeline tersuai dan berkongsinya di [Hub](hf.co/models) atau menambahkannya pada
+🤗 Perpustakaan Transformers.
+
+Pertama sekali, anda perlu memutuskan entri mentah yang boleh diambil oleh pipeline. Ia boleh menjadi rentetan, bait mentah,
+kamus atau apa sahaja yang nampaknya merupakan input yang paling mungkin dikehendaki. Cuba pastikan input ini sebagai Python tulen yang mungkin
+kerana ia menjadikan keserasian lebih mudah (walaupun melalui bahasa lain melalui JSON). Itu akan menjadi `input` daripada
+pipeline (`praproses`).
+
+Kemudian tentukan `output`. Dasar yang sama seperti `input`. Lebih mudah, lebih baik. Itu akan menjadi output daripada
+kaedah `pascaproses`.
+
+Mulakan dengan mewarisi kelas asas `Pipeline` dengan 4 kaedah yang diperlukan untuk melaksanakan `praproses`,
+`_forward`, `postprocess` dan `_sanitize_parameters`.
+
+
+```python
+from transformers import Pipeline
+
+
+class MyPipeline(Pipeline):
+    def _sanitize_parameters(self, **kwargs):
+        preprocess_kwargs = {}
+        if "maybe_arg" in kwargs:
+            preprocess_kwargs["maybe_arg"] = kwargs["maybe_arg"]
+        return preprocess_kwargs, {}, {}
+
+    def preprocess(self, inputs, maybe_arg=2):
+        model_input = Tensor(inputs["input_ids"])
+        return {"model_input": model_input}
+
+    def _forward(self, model_inputs):
+        # model_inputs == {"model_input": model_input}
+        outputs = self.model(**model_inputs)
+        # Maybe {"logits": Tensor(...)}
+        return outputs
+
+    def postprocess(self, model_outputs):
+        best_class = model_outputs["logits"].softmax(-1)
+        return best_class
+```
+
+Struktur pecahan ini adalah untuk menyokong sokongan yang agak lancar untuk CPU/GPU, sambil menyokong melakukan
+pra/pasca pemprosesan pada CPU pada benang yang berbeza
+
+`praproses` akan mengambil input yang ditakrifkan pada asalnya, dan mengubahnya menjadi sesuatu yang boleh disuap kepada model. Ia mungkin
+mengandungi lebih banyak maklumat dan biasanya merupakan `Dict`.
+
+`_forward` ialah butiran pelaksanaan dan tidak dimaksudkan untuk dipanggil terus. `ke hadapan` adalah diutamakan
+dipanggil kaedah kerana ia mengandungi perlindungan untuk memastikan semuanya berfungsi pada peranti yang dijangkakan. Jika ada
+dipautkan kepada model sebenar ia tergolong dalam kaedah `_forward`, apa-apa lagi adalah dalam praproses/pascaproses.
+
+Kaedah `pascaproses` akan mengambil output `_forward` dan mengubahnya menjadi output akhir yang telah diputuskan
+lebih awal.
+
+`_sanitize_parameters` wujud untuk membolehkan pengguna melepasi sebarang parameter pada bila-bila masa yang mereka mahu, sama ada pada permulaan
+masa `pipeline(...., maybe_arg=4)` atau pada masa panggilan `pipe = pipeline(...); keluaran = paip(...., mungkin_arg=4)`.
+
+Pengembalian `_sanitize_parameters` ialah 3 dict kwarg yang akan dihantar terus ke `praproses`,
+`_forward`, dan `postprocess`. Jangan isikan apa-apa jika pemanggil tidak memanggil dengan sebarang parameter tambahan. Itu
+membolehkan untuk mengekalkan hujah lalai dalam definisi fungsi yang sentiasa lebih "semula jadi".
+
+Contoh klasik ialah hujah `top_k` dalam pemprosesan pos dalam tugas klasifikasi.
+
+```python
+>>> pipe = pipeline("my-new-task")
+>>> pipe("This is a test")
+[{"label": "1-star", "score": 0.8}, {"label": "2-star", "score": 0.1}, {"label": "3-star", "score": 0.05}
+{"label": "4-star", "score": 0.025}, {"label": "5-star", "score": 0.025}]
+
+>>> pipe("This is a test", top_k=2)
+[{"label": "1-star", "score": 0.8}, {"label": "2-star", "score": 0.1}]
+```
+
+Untuk mencapainya, kami akan mengemas kini kaedah `pascaproses` kami dengan parameter lalai kepada `5`. dan edit
+`_sanitize_parameters` untuk membenarkan parameter baharu ini.
+
+
+```python
+def postprocess(self, model_outputs, top_k=5):
+    best_class = model_outputs["logits"].softmax(-1)
+    # Add logic to handle top_k
+    return best_class
+
+
+def _sanitize_parameters(self, **kwargs):
+    preprocess_kwargs = {}
+    if "maybe_arg" in kwargs:
+        preprocess_kwargs["maybe_arg"] = kwargs["maybe_arg"]
+
+    postprocess_kwargs = {}
+    if "top_k" in kwargs:
+        postprocess_kwargs["top_k"] = kwargs["top_k"]
+    return preprocess_kwargs, {}, postprocess_kwargs
+```
+
+Cuba pastikan input/output sangat mudah dan idealnya boleh bersiri JSON kerana ia menjadikan penggunaan pipeline sangat mudah
+tanpa memerlukan pengguna memahami jenis objek baharu. Ia juga agak biasa untuk menyokong pelbagai jenis
+daripada argumen untuk kemudahan penggunaan (fail audio, boleh menjadi nama fail, URL atau bait tulen)
+
+
+
+## Menambahkannya pada senarai tugasan yang disokong
+
+Untuk mendaftarkan `tugasan baharu` anda ke senarai tugasan yang disokong, anda perlu menambahkannya pada `PIPELINE_REGISTRY`:
+
+```python
+from transformers.pipelines import PIPELINE_REGISTRY
+
+PIPELINE_REGISTRY.register_pipeline(
+    "new-task",
+    pipeline_class=MyPipeline,
+    pt_model=AutoModelForSequenceClassification,
+)
+```
+
+Anda boleh menentukan model lalai jika anda mahu, dalam hal ini ia harus disertakan dengan semakan khusus (yang boleh menjadi nama cawangan atau cincang komit, di sini kami mengambil `"abcdef"`) serta jenis:
+
+```python
+PIPELINE_REGISTRY.register_pipeline(
+    "new-task",
+    pipeline_class=MyPipeline,
+    pt_model=AutoModelForSequenceClassification,
+    default={"pt": ("user/awesome_model", "abcdef")},
+    type="text",  # current support type: text, audio, image, multimodal
+)
+```
+
+## Kongsi pipeline anda di Hab
+
+Untuk berkongsi pipeline tersuai anda pada Hab, anda hanya perlu menyimpan kod tersuai subkelas `Pipeline` anda dalam
+fail python. Sebagai contoh, katakan kita mahu menggunakan pipeline tersuai untuk klasifikasi pasangan ayat seperti ini:
+
+```py
+import numpy as np
+
+from transformers import Pipeline
+
+
+def softmax(outputs):
+    maxes = np.max(outputs, axis=-1, keepdims=True)
+    shifted_exp = np.exp(outputs - maxes)
+    return shifted_exp / shifted_exp.sum(axis=-1, keepdims=True)
+
+
+class PairClassificationPipeline(Pipeline):
+    def _sanitize_parameters(self, **kwargs):
+        preprocess_kwargs = {}
+        if "second_text" in kwargs:
+            preprocess_kwargs["second_text"] = kwargs["second_text"]
+        return preprocess_kwargs, {}, {}
+
+    def preprocess(self, text, second_text=None):
+        return self.tokenizer(text, text_pair=second_text, return_tensors=self.framework)
+
+    def _forward(self, model_inputs):
+        return self.model(**model_inputs)
+
+    def postprocess(self, model_outputs):
+        logits = model_outputs.logits[0].numpy()
+        probabilities = softmax(logits)
+
+        best_class = np.argmax(probabilities)
+        label = self.model.config.id2label[best_class]
+        score = probabilities[best_class].item()
+        logits = logits.tolist()
+        return {"label": label, "score": score, "logits": logits}
+```
+
+Pelaksanaannya adalah rangka kerja agnostik, dan akan berfungsi untuk model PyTorch dan TensorFlow. Jika kita telah menyimpan ini dalam
+fail bernama `pair_classification.py`, kami kemudian boleh mengimportnya dan mendaftarkannya seperti ini:
+
+```py
+from pair_classification import PairClassificationPipeline
+from transformers.pipelines import PIPELINE_REGISTRY
+from transformers import AutoModelForSequenceClassification, TFAutoModelForSequenceClassification
+
+PIPELINE_REGISTRY.register_pipeline(
+    "pair-classification",
+    pipeline_class=PairClassificationPipeline,
+    pt_model=AutoModelForSequenceClassification,
+    tf_model=TFAutoModelForSequenceClassification,
+)
+```
+
+Setelah ini selesai, kita boleh menggunakannya dengan model terlatih. Contohnya `sgugger/finetuned-bert-mrpc` telah
+diperhalusi pada set data MRPC, yang mengklasifikasikan pasangan ayat sebagai parafrasa atau tidak.
+
+```py
+from transformers import pipeline
+
+classifier = pipeline("pair-classification", model="sgugger/finetuned-bert-mrpc")
+```
+
+Kemudian kita boleh berkongsinya di Hab dengan menggunakan kaedah `save_pretrained` dalam `Repository`:
+
+```py
+from huggingface_hub import Repository
+
+repo = Repository("test-dynamic-pipeline", clone_from="{your_username}/test-dynamic-pipeline")
+classifier.save_pretrained("test-dynamic-pipeline")
+repo.push_to_hub()
+```
+
+Ini akan menyalin fail yang anda takrifkan `PairClassificationPipeline` di dalam folder `"test-dynamic-pipeline"`,
+bersama-sama dengan menyimpan model dan tokenizer pipeline, sebelum menolak segala-galanya dalam repositori
+`{namapengguna_anda}/talian-paip-dinamik`. Selepas itu sesiapa sahaja boleh menggunakannya asalkan mereka menyediakan pilihan
+`trust_remote_code=True`:
+
+```py
+from transformers import pipeline
+
+classifier = pipeline(model="{your_username}/test-dynamic-pipeline", trust_remote_code=True)
+```
+
+## Tambah pipeline ke 🤗 Transformers
+
+Jika anda ingin menyumbang pipeline anda kepada 🤗 Transformers, anda perlu menambah modul baharu dalam submodul `pipelines`
+dengan kod pipeline anda, kemudian tambahkannya dalam senarai tugasan yang ditakrifkan dalam `pipelines/__init__.py`.
+
+Kemudian anda perlu menambah ujian. Buat fail baharu `tests/test_pipelines_MY_PIPELINE.py` dengan contoh dengan ujian lain.
+
+Fungsi `run_pipeline_test` akan menjadi sangat generik dan dijalankan pada model rawak kecil pada setiap kemungkinan
+seni bina seperti yang ditakrifkan oleh `model_mapping` dan `tf_model_mapping`.
+
+Ini sangat penting untuk menguji keserasian masa hadapan, bermakna jika seseorang menambah model baharu untuk
+`XXXForQuestionAnswering` maka ujian pipeline akan cuba dijalankan padanya. Kerana modelnya adalah rawak
+mustahil untuk menyemak nilai sebenar, itulah sebabnya terdapat pembantu `SEBARANG` yang hanya akan cuba memadankan
+keluaran JENIS pipeline.
+
+Anda juga *perlu* melaksanakan 2 (idealnya 4) ujian.
+
+- `test_small_model_pt` : Tentukan 1 model kecil untuk pipeline ini (tidak kira jika hasilnya tidak masuk akal)
+  dan menguji output pipeline. Keputusan harus sama dengan `test_small_model_tf`.
+- `test_small_model_tf` : Tentukan 1 model kecil untuk pipeline ini (tidak kira jika hasilnya tidak masuk akal)
+  dan menguji output pipeline. Keputusan harus sama dengan `test_small_model_pt`.
+- `test_large_model_pt` (`optional`): Menguji pipeline pada pipeline sebenar di mana keputusan sepatutnya
+  masuk akal. Ujian ini adalah perlahan dan harus ditandakan sedemikian. Di sini matlamatnya adalah untuk mempamerkan pipeline dan membuat
+  pasti tiada hanyut dalam keluaran akan datang.
+- `test_large_model_tf` (`optional`): Menguji pipeline pada pipeline sebenar di mana keputusan sepatutnya
+  masuk akal. Ujian ini adalah perlahan dan harus ditandakan sedemikian. Di sini matlamatnya adalah untuk mempamerkan pipeline dan membuat
+  pasti tiada hanyut dalam keluaran akan datang.

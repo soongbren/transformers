@@ -1,0 +1,891 @@
+<!--Hak Cipta 2020 Pasukan HuggingFace. Hak cipta terpelihara.
+
+Dilesenkan di bawah Lesen Apache, Versi 2.0 ("Lesen"); anda tidak boleh menggunakan fail ini kecuali dengan mematuhi
+Lesen. Anda boleh mendapatkan salinan Lesen di
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Melainkan diperlukan oleh undang-undang yang terpakai atau dipersetujui secara bertulis, perisian yang diedarkan di bawah Lesen diedarkan pada
+ASAS "SEBAGAIMANA ADANYA", TANPA WARANTI ATAU SEBARANG JENIS SYARAT, sama ada nyata atau tersirat. Lihat Lesen untuk
+-->
+
+# Bagaimana untuk menambah model ke 🤗 Transformers?
+
+Perpustakaan 🤗 Transformers selalunya dapat menawarkan model baharu terima kasih kepada penyumbang komuniti. Tetapi ini boleh menjadi projek yang mencabar dan memerlukan pengetahuan yang mendalam tentang perpustakaan Transformers dan model untuk dilaksanakan. Di Hugging Face, kami cuba memperkasakan lebih ramai komuniti untuk menambahkan model secara aktif dan kami telah mengumpulkan panduan ini untuk memandu anda melalui proses menambah model PyTorch (pastikan anda telah [PyTorch dipasang](https:/ /pytorch.org/get-started/locally/)).
+
+<Tip>
+
+Jika anda berminat untuk melaksanakan model TensorFlow, lihat panduan [Cara menukar model Transformers 🤗 kepada TensorFlow](add_tensorflow_model)!
+
+</Tip>
+
+Sepanjang perjalanan, anda akan:
+
+- dapatkan cerapan tentang amalan terbaik sumber terbuka
+- fahami prinsip reka bentuk di sebalik salah satu perpustakaan pembelajaran mendalam yang paling popular
+- belajar cara menguji model besar dengan cekap
+- pelajari cara mengintegrasikan utiliti Python seperti `hitam`, `ruff`, dan `membetulkan-salinan` untuk memastikan kod bersih dan boleh dibaca
+
+Ahli pasukan Memeluk Wajah akan bersedia untuk membantu anda sepanjang perjalanan supaya anda tidak akan keseorangan. 🤗 ❤️
+
+Untuk bermula, buka [Tambahan model baharu](https://github.com/huggingface/transformers/issues/new?assignees=&labels=New+model&template=new-model-addition.yml) isu untuk model yang anda mahu untuk lihat dalam 🤗 Transformers. Jika anda tidak terlalu memilih untuk menyumbang model tertentu, anda boleh menapis mengikut [Label model baharu](https://github.com/huggingface/transformers/labels/New%20model) untuk melihat sama ada terdapat model yang tidak dituntut permintaan dan usahakan.
+
+Sebaik sahaja anda telah membuka permintaan model baharu, langkah pertama ialah membiasakan diri dengan 🤗 Transformers jika anda belum melakukannya!
+
+## Gambaran umum tentang 🤗 Transformers
+
+Pertama, anda harus mendapatkan gambaran umum tentang 🤗 Transformers. 🤗 Transformers adalah perpustakaan yang sangat berpendirian, jadi ada
+kemungkinan anda tidak bersetuju dengan beberapa falsafah atau pilihan reka bentuk perpustakaan. Dari pengalaman kami, bagaimanapun, kami
+mendapati bahawa pilihan reka bentuk asas dan falsafah perpustakaan adalah penting untuk skala yang cekap 🤗
+Transformer sambil mengekalkan kos penyelenggaraan pada tahap yang munasabah.
+
+Titik permulaan pertama yang baik untuk memahami perpustakaan dengan lebih baik ialah membaca [dokumentasi falsafah kita](falsafah). Hasil daripada cara kerja kami, terdapat beberapa pilihan yang kami cuba gunakan untuk semua model:
+
+- Komposisi biasanya digemari terlebih abstrak
+- Kod pendua tidak selalu buruk jika ia meningkatkan kebolehbacaan atau kebolehcapaian model dengan kuat
+- Fail model adalah serba lengkap yang mungkin supaya apabila anda membaca kod model tertentu, anda sebaiknya hanya
+  perlu melihat ke dalam fail `modeling_....py` masing-masing.
+
+Pada pendapat kami, kod perpustakaan bukan sekadar cara untuk menyediakan produk, *cth.* keupayaan untuk menggunakan BERT untuk
+inferens, tetapi juga sebagai produk yang ingin kami perbaiki. Oleh itu, apabila menambah model, pengguna bukan sahaja
+orang yang akan menggunakan model anda, tetapi juga semua orang yang akan membaca, cuba memahami, dan mungkin mengubah suai kod anda.
+
+Dengan mengambil kira perkara ini, mari kita pergi lebih mendalam ke dalam reka bentuk perpustakaan umum.
+
+### Gambaran keseluruhan model
+
+Untuk berjaya menambah model, adalah penting untuk memahami interaksi antara model anda dan konfigurasinya,
+[`PreTrainedModel`] dan [`PtrainedConfig`]. Untuk tujuan teladan, kami akan
+panggil model untuk ditambah ke 🤗 Transformers `BrandNewBert`.
+
+Mari kita lihat:
+
+<img src="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers_overview.png"/>
+
+Seperti yang anda lihat, kami menggunakan warisan dalam 🤗 Transformers, tetapi kami mengekalkan tahap abstraksi pada tahap mutlak
+minimum. Tidak ada lebih daripada dua tahap abstraksi untuk mana-mana model dalam perpustakaan. `BrandNewBertModel`
+mewarisi daripada `BrandNewBertPreTrainedModel` yang seterusnya mewarisi daripada [`PreTrainedModel`] dan
+itu sahaja. Sebagai peraturan umum, kami ingin memastikan bahawa model baharu hanya bergantung kepada
+[`PreTrainedModel`]. Fungsi penting yang disediakan secara automatik kepada setiap yang baharu
+model ialah [`~PreTrainedModel.from_pretrained`] dan
+[`~PreTrainedModel.save_pretrained`], yang digunakan untuk bersiri dan penyahserilan. Semua
+fungsi penting lain, seperti `BrandNewBertModel.forward` harus ditakrifkan sepenuhnya dalam
+skrip `modeling_brand_new_bert.py`. Seterusnya, kami ingin memastikan bahawa model dengan lapisan kepala tertentu, seperti
+`BrandNewBertForMaskedLM` tidak mewarisi daripada `BrandNewBertModel`, sebaliknya menggunakan `BrandNewBertModel`
+sebagai komponen yang boleh dipanggil dalam hantaran hadapannya untuk mengekalkan tahap abstraksi rendah. Setiap model baharu memerlukan a
+kelas konfigurasi, dipanggil `BrandNewBertConfig`. Konfigurasi ini sentiasa disimpan sebagai atribut dalam
+[`PreTrainedModel`], dan dengan itu boleh diakses melalui atribut `config` untuk semua kelas
+mewarisi daripada `BrandNewBertPreTrainedModel`:
+
+```python
+model = BrandNewBertModel.from_pretrained("brandy/brand_new_bert")
+model.config  # model mempunyai akses kepada konfigurasinya
+```
+
+Sama seperti model, konfigurasi mewarisi fungsi bersiri dan penyahserihan asas daripada
+[`PtrainedConfig`]. Ambil perhatian bahawa konfigurasi dan model sentiasa bersiri kepada dua
+format yang berbeza - model kepada fail *pytorch_model.bin* dan konfigurasi kepada fail *config.json*. Memanggil
+[`~PreTrainedModel.save_pretrained`] akan memanggil secara automatik
+[`~PtrainedConfig.save_pretrained`], supaya kedua-dua model dan konfigurasi disimpan.
+
+
+### Gaya kod
+
+Apabila mengekod model baharu anda, perlu diingat bahawa Transformers ialah perpustakaan yang mempunyai pendapat dan kami mempunyai beberapa ciri khas kami.
+sendiri tentang bagaimana kod harus ditulis :-)
+
+1. Pas ke hadapan model anda hendaklah ditulis sepenuhnya dalam fail pemodelan sambil bebas sepenuhnya daripada yang lain
+   model di perpustakaan. Jika anda ingin menggunakan semula blok daripada model lain, salin kod dan tampalkannya dengan a
+   `# Disalin daripada` ulasan di atas (lihat [di sini](https://github.com/huggingface/transformers/blob/v4.17.0/src/transformers/models/roberta/modeling_roberta.py#L160)
+   untuk contoh yang baik).
+2. Kod itu harus difahami sepenuhnya, walaupun oleh penutur bahasa Inggeris bukan asli. Ini bermakna anda harus memilih
+   nama pembolehubah deskriptif dan elakkan singkatan. Sebagai contoh, `pengaktifan` lebih disukai daripada `bertindak`.
+   Nama pembolehubah satu huruf amat tidak digalakkan melainkan ia adalah indeks dalam gelung for.
+3. Secara umumnya, kami lebih suka kod eksplisit yang lebih panjang daripada kod ajaib pendek.
+4. Elakkan subkelas `nn.Sequential` dalam PyTorch tetapi subkelas `nn.Module` dan tulis hantaran ke hadapan, supaya sesiapa sahaja
+   menggunakan kod anda boleh menyahpepijatnya dengan cepat dengan menambahkan penyata cetakan atau titik putus.
+5. Tandatangan fungsi anda hendaklah beranotasi jenis. Untuk yang lain, nama pembolehubah yang baik adalah lebih mudah dibaca dan
+   boleh difahami daripada anotasi jenis.
+
+### Gambaran keseluruhan tokenizer
+
+Belum bersedia lagi :-( Bahagian ini akan ditambah tidak lama lagi!
+
+## Resipi langkah demi langkah untuk menambah model pada 🤗 Transformers
+
+Setiap orang mempunyai pilihan yang berbeza tentang cara mengalihkan model supaya ia boleh sangat membantu anda untuk melihat ringkasan
+tentang cara penyumbang lain mengalihkan model ke Wajah Memeluk. Berikut ialah senarai catatan blog komuniti tentang cara mengalihkan model:
+
+1. [Porting GPT2 Model](https://medium.com/huggingface/from-tensorflow-to-pytorch-265f40ef2a28) by [Thomas](https://huggingface.co/thomwolf)
+2. [Porting WMT19 MT Model](https://huggingface.co/blog/porting-fsmt) by [Stas](https://huggingface.co/stas)
+
+Daripada pengalaman, kami boleh memberitahu anda bahawa perkara paling penting yang perlu diingat semasa menambah model ialah:
+
+- Jangan cipta semula roda! Kebanyakan bahagian kod yang anda akan tambah untuk model Transformers baharu 🤗 sudah wujud
+  di suatu tempat di 🤗 Transformers. Luangkan sedikit masa untuk mencari model dan tokenizer sedia ada yang serupa yang boleh anda salin
+  daripada. [grep](https://www.gnu.org/software/grep/) dan [rg](https://github.com/BurntSushi/ripgrep) ialah anda
+  kawan-kawan. Ambil perhatian bahawa mungkin berlaku bahawa tokenizer model anda adalah berdasarkan satu pelaksanaan model dan
+  kod pemodelan model anda pada satu lagi. *Cth.* Kod pemodelan FSMT adalah berdasarkan BART, manakala kod tokenizer FSMT
+  adalah berasaskan XLM.
+- Ia lebih kepada cabaran kejuruteraan daripada cabaran saintifik. Anda harus meluangkan lebih banyak masa untuk mencipta
+  persekitaran penyahpepijatan yang cekap daripada cuba memahami semua aspek teori model dalam kertas.
+- Minta bantuan, apabila anda tersekat! Model adalah komponen teras 🤗 Transformers supaya kami di Hugging Face lebih ramai
+  daripada gembira untuk membantu anda pada setiap langkah untuk menambah model anda. Jangan teragak-agak untuk bertanya jika anda perasan anda tidak membuat
+  kemajuan.
+
+Dalam perkara berikut, kami cuba memberikan anda resipi umum yang kami dapati paling berguna apabila mengalihkan model ke 🤗 Transformers.
+
+Senarai berikut ialah ringkasan semua yang perlu dilakukan untuk menambah model dan boleh digunakan oleh anda sebagai Tugasan
+Senarai:
+
+☐ (Pilihan) Memahami aspek teori model<br>
+☐ Disediakan 🤗 Persekitaran pembangun Transformers<br>
+☐ Sediakan persekitaran penyahpepijatan repositori asal<br>
+☐ Mencipta skrip yang berjaya menjalankan pas `forward()` menggunakan repositori asal dan pusat pemeriksaan<br>
+☐ Berjaya menambahkan rangka model pada 🤗 Transformers<br>
+☐ Berjaya menukar pusat pemeriksaan asal kepada 🤗 Pusat pemeriksaan Transformers<br>
+☐ Berjaya menjalankan `forward()` pass in 🤗 Transformer yang memberikan output yang sama kepada checkpoint asal<br>
+☐ Selesai ujian model dalam 🤗 Transformers<br>
+☐ Berjaya menambahkan tokenizer dalam 🤗 Transformers<br>
+☐ Jalankan ujian penyepaduan hujung ke hujung<br>
+☐ Dokumen selesai<br>
+☐ Memuat model weights ke Hab<br>
+☐ Menghantar permintaan tarik<br>
+☐ (Pilihan) Menambah buku nota tunjuk cara
+
+Sebagai permulaan, kami biasanya mengesyorkan untuk bermula dengan mendapatkan pemahaman teori yang baik tentang `BrandNewBert`. Walau bagaimanapun,
+jika anda lebih suka memahami aspek teori model *sedang-kerja*, maka anda boleh menyelam secara langsung
+ke dalam pangkalan kod `BrandNewBert`. Pilihan ini mungkin lebih sesuai dengan anda, jika kemahiran kejuruteraan anda lebih baik daripada
+kemahiran teori anda, jika anda menghadapi masalah memahami kertas `BrandNewBert`, atau jika anda hanya menikmati pengaturcaraan
+lebih daripada membaca karya ilmiah.
+
+### 1. (Pilihan) Aspek teori BrandNewBert
+
+Anda harus mengambil sedikit masa untuk membaca kertas *BrandNewBert*, jika kerja deskriptif tersebut wujud. Mungkin ada yang besar
+bahagian kertas yang sukar difahami. Jika ini berlaku, ini tidak mengapa - jangan risau! Matlamatnya ialah
+bukan untuk mendapatkan pemahaman teori yang mendalam tentang kertas itu, tetapi untuk mengekstrak maklumat yang diperlukan yang diperlukan untuk
+melaksanakan semula model dengan berkesan dalam 🤗 Transformers. Yang sedang berkata, anda tidak perlu menghabiskan terlalu banyak masa pada
+aspek teori, tetapi lebih fokus kepada aspek praktikal iaitu:
+
+- Apakah jenis model *brand_new_bert*? Model pengekod seperti BERT sahaja? Model penyahkod seperti GPT2 sahaja? macam BART
+  model pengekod-penyahkod? Lihat [model_summary](model_summary) jika anda tidak biasa dengan perbezaan antara mereka.
+- Apakah aplikasi *brand_new_bert*? Klasifikasi teks? Penjanaan teks? Tugasan Seq2Seq, *cth.,*
+  ringkasan?
+- Apakah ciri novel model yang menjadikannya berbeza daripada BERT/GPT-2/BART?
+- Manakah antara [🤗 model Transformers] yang sedia ada (https://huggingface.co/transformers/#contents) yang paling banyak
+  serupa dengan *brand_new_bert*?
+- Apakah jenis tokenizer yang digunakan? Tokenizer ayat? Tokenizer kepingan perkataan? Adakah ia tokenizer yang sama seperti yang digunakan
+  untuk BERT atau BART?
+
+Selepas anda merasakan anda telah mendapat gambaran keseluruhan yang baik tentang seni bina model, anda mungkin mahu menulis kepada
+Memeluk pasukan Wajah dengan sebarang soalan yang anda ada. Ini mungkin termasuk soalan mengenai seni bina model,
+lapisan perhatiannya, dsb. Kami akan berbesar hati untuk membantu anda.
+
+### 2. Seterusnya sediakan persekitaran anda
+
+1. Fork [repositori](https://github.com/huggingface/transformers) dengan mengklik pada butang 'Fork' pada
+   halaman repositori. Ini mencipta salinan kod di bawah akaun pengguna GitHub anda.
+
+2. Klonkan garpu `transformers` anda ke cakera setempat anda, dan tambahkan repositori asas sebagai alat kawalan jauh:
+
+```bash
+git clone https://github.com/[your Github handle]/transformers.git
+cd transformers
+git remote add upstream https://github.com/huggingface/transformers.git
+```
+
+3. Sediakan persekitaran pembangunan, contohnya dengan menjalankan arahan berikut:
+
+```bash
+python -m venv .env
+source .env/bin/activate
+pip install -e ".[dev]"
+```
+
+Bergantung pada OS anda, dan memandangkan bilangan kebergantungan pilihan Transformers semakin meningkat, anda mungkin mendapat a
+kegagalan dengan arahan ini. Jika demikian, pastikan anda memasang rangka kerja Pembelajaran Dalam yang sedang anda gunakan
+(PyTorch, TensorFlow dan/atau Flax) kemudian lakukan:
+
+```bash
+pip install -e ".[quality]"
+```
+
+yang sepatutnya cukup untuk kebanyakan kes penggunaan. Anda kemudian boleh kembali ke direktori induk
+
+```bash
+cd ..
+```
+
+4. Kami mengesyorkan menambah versi PyTorch *brand_new_bert* pada Transformers. Untuk memasang PyTorch, sila ikuti
+   arahan pada https://pytorch.org/get-started/locally/.
+
+**Nota:** Anda tidak perlu memasang CUDA. Membuat model baharu berfungsi pada CPU sudah memadai.
+
+5. Untuk mengalihkan *brand_new_bert*, anda juga memerlukan akses kepada repositori asalnya:
+
+```bash
+git clone https://github.com/org_that_created_brand_new_bert_org/brand_new_bert.git
+cd brand_new_bert
+pip install -e .
+```
+
+Kini anda telah menyediakan persekitaran pembangunan untuk mengalihkan *brand_new_bert* ke 🤗 Transformers.
+
+### 3.-4. Jalankan pusat pemeriksaan terlatih menggunakan repositori asal
+
+Pada mulanya, anda akan mengusahakan repositori *brand_new_bert* asal. Selalunya, pelaksanaan asal sangat
+“penyelidikan”. Bermaksud bahawa dokumentasi mungkin kurang dan kod itu mungkin sukar difahami. Tetapi ini sepatutnya
+menjadi motivasi anda untuk melaksanakan semula *brand_new_bert*. Di Hugging Face, salah satu matlamat utama kami ialah *membuat orang
+berdiri di atas bahu gergasi* yang diterjemahkan dengan baik di sini untuk mengambil model yang berfungsi dan menulis semula untuk membuat
+ia sebagai **boleh diakses, mesra pengguna dan cantik** yang mungkin. Ini adalah motivasi nombor satu untuk melaksanakan semula
+model menjadi 🤗 Transformers - cuba menjadikan teknologi NLP baharu yang kompleks boleh diakses oleh **semua orang**.
+
+Anda harus bermula dengan itu dengan menyelam ke dalam repositori asal.
+
+Berjaya menjalankan model terlatih rasmi dalam repositori asal selalunya **langkah paling sukar**.
+Daripada pengalaman kami, adalah sangat penting untuk meluangkan sedikit masa untuk membiasakan diri dengan asas kod asal. Anda perlu
+fikirkan perkara berikut:
+
+- Di mana untuk mencari pemberat yang telah dilatih?
+- Bagaimana untuk memuatkan pemberat yang telah dilatih ke dalam model yang sepadan?
+- Bagaimana untuk menjalankan tokenizer secara bebas daripada model?
+- Jejaki satu hantaran hadapan supaya anda tahu kelas dan fungsi yang diperlukan untuk hantaran hadapan mudah. Biasanya,
+  anda hanya perlu melaksanakan semula fungsi tersebut.
+- Dapat mengesan komponen penting model: Di manakah kelas model? Adakah terdapat subkelas model,
+  *cth.* EncoderModel, DecoderModel? Di manakah lapisan perhatian diri? Adakah terdapat pelbagai lapisan perhatian yang berbeza,
+  *cth.* *perhatian diri*, *perhatian silang*...?
+- Bagaimanakah anda boleh menyahpepijat model dalam persekitaran asal repo? Adakah anda perlu menambah penyata *cetak*, boleh
+  bekerja dengan penyahpepijat interaktif seperti *ipdb*, atau patutkah anda menggunakan IDE yang cekap untuk menyahpepijat model, seperti PyCharm?
+
+Adalah sangat penting sebelum anda memulakan proses pemindahan, anda boleh **dengan cekap** nyahpepijat kod dalam kod asal
+repositori! Juga, ingat bahawa anda sedang bekerja dengan perpustakaan sumber terbuka, jadi jangan teragak-agak untuk membuka isu, atau
+walaupun permintaan tarik dalam repositori asal. Penyelenggara repositori ini kemungkinan besar sangat gembira
+seseorang melihat ke dalam kod mereka!
+
+Pada ketika ini, terpulang kepada anda tentang persekitaran dan strategi penyahpepijatan yang anda suka gunakan untuk menyahpepijat yang asal
+model. Kami sangat menasihatkan agar tidak menyediakan persekitaran GPU yang mahal, tetapi hanya gunakan CPU kedua-duanya apabila mula melakukannya
+menyelam ke dalam repositori asal dan juga apabila mula menulis 🤗 Transformers pelaksanaan model. Sahaja
+pada akhirnya, apabila model telah berjaya dialihkan ke 🤗 Transformers, seseorang harus mengesahkan bahawa
+model juga berfungsi seperti yang diharapkan pada GPU.
+
+Secara umum, terdapat dua kemungkinan persekitaran penyahpepijatan untuk menjalankan model asal
+
+- [buku nota Jupyter](https://jupyter.org/) / [google colab](https://colab.research.google.com/notebooks/intro.ipynb)
+- Skrip python tempatan.
+
+Buku nota Jupyter mempunyai kelebihan yang membolehkannya untuk pelaksanaan sel demi sel yang boleh membantu pembahagian yang lebih baik
+komponen logik antara satu sama lain dan mempunyai kitaran penyahpepijatan yang lebih pantas kerana hasil perantaraan boleh disimpan. Juga,
+buku nota selalunya lebih mudah untuk dikongsi dengan penyumbang lain, yang mungkin sangat membantu jika anda ingin bertanya kepada Pelukan
+Hadapi pasukan untuk mendapatkan bantuan. Jika anda biasa dengan buku nota Jupyter, kami amat mengesyorkan anda untuk bekerja dengannya.
+
+Kelemahan jelas buku nota Jupyter ialah jika anda tidak biasa bekerja dengannya, anda perlu berbelanja
+sedikit masa menyesuaikan diri dengan persekitaran pengaturcaraan baharu dan anda mungkin tidak dapat menggunakan alat penyahpepijatan anda yang diketahui
+lagi, seperti `ipdb`.
+
+Untuk setiap asas kod, langkah pertama yang baik adalah sentiasa memuatkan pusat pemeriksaan **kecil** terlatih dan dapat menghasilkan semula
+hantaran hadapan tunggal menggunakan vektor integer tiruan bagi ID input sebagai input. Skrip sedemikian boleh kelihatan seperti ini (dalam
+pseudokod):
+
+```python
+model = BrandNewBertModel.load_pretrained_checkpoint("/path/to/checkpoint/")
+input_ids = [0, 4, 5, 2, 3, 7, 9]  # vector of input ids
+original_output = model.predict(input_ids)
+```
+
+Seterusnya, mengenai strategi penyahpepijatan, biasanya terdapat beberapa pilihan untuk dipilih:
+
+- Uraikan model asal kepada banyak komponen kecil yang boleh diuji dan jalankan hantaran ke hadapan pada setiap satu untuk
+  pengesahan
+- Uraikan model asal hanya kepada *tokenizer* asal dan *model* asal, jalankan hantaran ke hadapan
+  itu, dan gunakan pernyataan cetakan perantaraan atau titik putus untuk pengesahan
+
+Sekali lagi, terpulang kepada anda strategi mana yang hendak dipilih. Selalunya, satu atau yang lain berfaedah bergantung pada kod asal
+asas.
+
+Jika asas kod asal membenarkan anda menguraikan model kepada subkomponen yang lebih kecil, *cth.* jika yang asal
+asas kod boleh dijalankan dengan mudah dalam mod bersemangat, ia biasanya berbaloi dengan usaha untuk berbuat demikian. Terdapat beberapa kelebihan penting
+untuk mengambil jalan yang lebih sukar pada mulanya:
+
+- pada peringkat kemudian apabila membandingkan model asal dengan pelaksanaan Memeluk Wajah, anda boleh mengesahkan secara automatik
+  untuk setiap komponen secara individu yang komponen sepadan bagi pelaksanaan Transformers 🤗 sebaliknya sepadan
+  bergantung pada perbandingan visual melalui kenyataan cetakan
+- ia boleh memberi anda beberapa tali untuk menguraikan masalah besar mengalih model kepada masalah yang lebih kecil hanya mengalihkan
+  komponen individu dan dengan itu menstrukturkan kerja anda dengan lebih baik
+- mengasingkan model kepada komponen logik yang bermakna akan membantu anda mendapatkan gambaran keseluruhan yang lebih baik tentang reka bentuk model
+  dan dengan itu untuk lebih memahami model tersebut
+- pada peringkat kemudian ujian komponen demi komponen tersebut membantu anda memastikan tiada regresi berlaku semasa anda meneruskan
+  menukar kod anda
+
+[Lysandre's](https://gist.github.com/LysandreJik/db4c948f6b4483960de5cbac598ad4ed) semakan penyepaduan untuk ELECTRA
+memberikan contoh yang bagus tentang bagaimana ini boleh dilakukan.
+
+Walau bagaimanapun, jika asas kod asal sangat kompleks atau hanya membenarkan komponen perantaraan dijalankan dalam mod terkumpul,
+ia mungkin terlalu memakan masa atau bahkan mustahil untuk memisahkan model kepada sub-komponen yang boleh diuji yang lebih kecil. Yang baik
+contohnya ialah perpustakaan [T5's MeshTensorFlow](https://github.com/tensorflow/mesh/tree/master/mesh_tensorflow) yang
+sangat kompleks dan tidak menawarkan cara mudah untuk menguraikan model kepada sub-komponennya. Untuk perpustakaan sedemikian, satu
+selalunya bergantung pada pengesahan penyata cetakan.
+
+Tidak kira strategi yang anda pilih, prosedur yang disyorkan selalunya sama kerana anda harus mula menyahpepijat
+lapisan permulaan dahulu dan lapisan akhir terakhir.
+
+Adalah disyorkan agar anda mendapatkan semula output, sama ada melalui penyataan cetakan atau fungsi sub-komponen, daripada yang berikut
+lapisan dalam susunan berikut:
+
+1. Dapatkan semula ID input yang dihantar kepada model
+2. Dapatkan semula perkataan embeddings
+3. Dapatkan semula input lapisan Transformer pertama
+4. Dapatkan keluaran lapisan Transformer pertama
+5. Dapatkan keluaran lapisan n - 1 Transformer berikut
+6. Dapatkan keluaran keseluruhan Model BrandNewBert
+
+ID input hendaklah dengan itu terdiri daripada tatasusunan integer, *cth.* `input_ids = [0, 4, 4, 3, 2, 4, 1, 7, 19]`
+
+Output lapisan berikut selalunya terdiri daripada tatasusunan apungan berbilang dimensi dan boleh kelihatan seperti ini:
+
+```
+[[
+ [-0.1465, -0.6501,  0.1993,  ...,  0.1451,  0.3430,  0.6024],
+ [-0.4417, -0.5920,  0.3450,  ..., -0.3062,  0.6182,  0.7132],
+ [-0.5009, -0.7122,  0.4548,  ..., -0.3662,  0.6091,  0.7648],
+ ...,
+ [-0.5613, -0.6332,  0.4324,  ..., -0.3792,  0.7372,  0.9288],
+ [-0.5416, -0.6345,  0.4180,  ..., -0.3564,  0.6992,  0.9191],
+ [-0.5334, -0.6403,  0.4271,  ..., -0.3339,  0.6533,  0.8694]]],
+```
+
+Kami menjangkakan bahawa setiap model yang ditambahkan pada 🤗 Transformers lulus beberapa ujian penyepaduan, bermakna yang asal
+model dan versi yang diimplementasikan semula dalam 🤗 Transformer perlu memberikan output yang sama tepat sehingga ketepatan 0.001!
+Oleh kerana ia adalah perkara biasa bahawa model yang sama yang ditulis dalam perpustakaan yang berbeza boleh memberikan output yang sedikit berbeza
+bergantung pada rangka kerja perpustakaan, kami menerima toleransi ralat 1e-3 (0.001). Ia tidak mencukupi jika model memberi
+output yang hampir sama, mereka mestilah hampir sama. Oleh itu, anda pasti akan membandingkan perantaraan
+output versi 🤗 Transformers berbilang kali berbanding output perantaraan pelaksanaan asal
+*brand_new_bert* dalam hal ini persekitaran penyahpepijatan **cekap** bagi repositori asal adalah benar-benar
+penting. Berikut ialah beberapa nasihat untuk menjadikan persekitaran penyahpepijatan anda seefisien mungkin.
+
+- Cari cara terbaik untuk menyahpepijat hasil perantaraan. Adakah repositori asal ditulis dalam PyTorch? Maka anda sepatutnya
+  mungkin mengambil masa untuk menulis skrip yang lebih panjang yang menguraikan model asal kepada sub-komponen yang lebih kecil
+  mendapatkan nilai perantaraan. Adakah repositori asal ditulis dalam Tensorflow 1? Kemudian anda mungkin perlu bergantung pada
+  Operasi cetakan TensorFlow seperti [tf.print](https://www.tensorflow.org/api_docs/python/tf/print) untuk menghasilkan
+  nilai pertengahan. Adakah repositori asal ditulis dalam Jax? Kemudian pastikan bahawa model **tidak terguncang** apabila
+  menjalankan pas ke hadapan, *cth.* daftar keluar [pautan ini](https://github.com/google/jax/issues/196).
+- Gunakan pusat pemeriksaan terlatih terkecil yang boleh anda temui. Lebih kecil pusat pemeriksaan, lebih cepat kitaran nyahpepijat anda
+  menjadi. Ia tidak cekap jika model pralatih anda terlalu besar sehingga hantaran hadapan anda mengambil masa lebih daripada 10 saat.
+  Sekiranya hanya pusat pemeriksaan yang sangat besar tersedia, mungkin lebih masuk akal untuk membuat model tiruan dalam model baharu
+  persekitaran dengan pemberat yang dimulakan secara rawak dan simpan pemberat tersebut untuk perbandingan dengan versi Transformers 🤗
+  model anda
+- Pastikan anda menggunakan cara paling mudah untuk memanggil pas ke hadapan dalam repositori asal. Sebaik-baiknya, anda mahu
+  cari fungsi dalam repositori asal yang **hanya** memanggil pas ke hadapan tunggal, *iaitu* yang sering dipanggil
+  `ramalkan`, `nilai`, `majukan` atau `__panggil__`. Anda tidak mahu nyahpepijat fungsi yang memanggil `forward`
+  beberapa kali, *cth.* untuk menjana teks, seperti `autoregressive_sample`, `generate`.
+- Cuba pisahkan tokenisasi daripada hantaran *ke hadapan* model. Jika repositori asal menunjukkan contoh di mana
+  anda perlu memasukkan rentetan, kemudian cuba cari di mana dalam panggilan ke hadapan input rentetan ditukar kepada id input
+  dan bermula dari titik ini. Ini mungkin bermakna anda mungkin perlu menulis skrip kecil sendiri atau menukarnya
+  kod asal supaya anda boleh terus memasukkan id dan bukannya rentetan input.
+- Pastikan model dalam persediaan penyahpepijatan anda **tidak** dalam mod latihan, yang sering menyebabkan model menghasilkan
+  keluaran rawak kerana berbilang lapisan keciciran dalam model. Pastikan bahawa ke hadapan lulus dalam penyahpepijatan anda
+  persekitaran adalah **deterministik** supaya lapisan tercicir tidak digunakan. Atau gunakan *transformers.utils.set_seed*
+  jika pelaksanaan lama dan baharu berada dalam rangka kerja yang sama.
+
+Bahagian berikut memberi anda butiran/petua yang lebih khusus tentang cara anda boleh melakukan ini untuk *brand_new_bert*.
+
+### 5.-14. Port BrandNewBert kepada 🤗 Transformers
+
+Seterusnya, anda akhirnya boleh mula menambah kod baharu pada 🤗 Transformers. Pergi ke klon garpu Transformers 🤗 anda:
+
+```bash
+cd transformers
+```
+
+Dalam kes khas bahawa anda menambah model yang seni binanya betul-betul sepadan dengan seni bina model sebuah
+model sedia ada anda hanya perlu menambah skrip penukaran seperti yang diterangkan dalam [bahagian ini](#write-a-conversion-script).
+Dalam kes ini, anda hanya boleh menggunakan semula keseluruhan seni bina model model yang sedia ada.
+
+Jika tidak, mari mula menjana model baharu. Anda mempunyai dua pilihan di sini:
+
+- `transformers-cli add-new-model-like` untuk menambah model baharu seperti yang sedia ada
+- `transformers-cli add-new-model` untuk menambah model baharu daripada templat kami (akan kelihatan seperti BERT atau Bart bergantung pada jenis model yang anda pilih)
+
+Dalam kedua-dua kes, anda akan digesa dengan soal selidik untuk mengisi maklumat asas model anda. Perintah kedua memerlukan untuk memasang `cookiecutter`, anda boleh mendapatkan maklumat lanjut mengenainya [di sini](https://github.com/huggingface/transformers/tree/main/templates/adding_a_new_model).
+
+**Buka Permintaan Tarik pada repo huggingface/transformers utama**
+
+Sebelum mula menyesuaikan kod yang dijana secara automatik, sekarang adalah masa untuk membuka tarikan "Kerja sedang berjalan (WIP)"
+permintaan, *cth.* “[WIP] Tambah *brand_new_bert*”, dalam 🤗 Transformers supaya anda dan pasukan Memeluk Wajah boleh bekerja
+sebelah-menyebelah pada penyepaduan model ke dalam 🤗 Transformers.
+
+Anda harus melakukan perkara berikut:
+
+1. Buat cawangan dengan nama deskriptif daripada cawangan utama anda
+
+```bash
+git checkout -b add_brand_new_bert
+```
+
+2. Serahkan kod yang dijana secara automatik:
+
+```bash
+git add .
+git commit
+```
+
+3. Ambil dan letakkan semula ke utama semasa
+
+```bash
+git fetch upstream
+git rebase upstream/main
+```
+
+4. Tolak perubahan pada akaun anda menggunakan:
+
+```bash
+git push -u origin a-descriptive-name-for-my-changes
+```
+
+5. Setelah anda berpuas hati, pergi ke halaman web fork anda di GitHub. Klik pada "Permintaan tarik". Pastikan untuk menambah
+   Pengendali GitHub beberapa ahli pasukan Wajah Pelukan sebagai penyemak, supaya pasukan Wajah Pelukan dimaklumkan untuk
+   perubahan masa hadapan.
+
+6. Tukar PR kepada draf dengan mengklik pada "Tukar kepada draf" di sebelah kanan halaman web permintaan tarik GitHub.
+
+Dalam perkara berikut, apabila anda telah melakukan beberapa kemajuan, jangan lupa untuk melakukan kerja anda dan tolaknya ke akaun anda supaya
+yang ditunjukkan dalam permintaan tarik. Selain itu, anda harus memastikan untuk mengemas kini kerja anda dengan utama semasa daripada
+dari semasa ke semasa dengan melakukan:
+
+```bash
+git fetch upstream
+git merge upstream/main
+```
+
+Secara umum, semua soalan yang anda mungkin ada mengenai model atau pelaksanaan anda harus ditanya dalam PR dan anda
+dibincangkan/diselesaikan dalam PR. Dengan cara ini, pasukan Memeluk Wajah akan sentiasa dimaklumkan apabila anda melakukan kod baharu atau
+jika anda mempunyai soalan. Selalunya sangat membantu untuk menunjukkan pasukan Wajah Memeluk kepada kod tambahan anda supaya Pelukan itu
+Pasukan muka boleh memahami masalah atau soalan anda dengan cekap.
+
+Untuk berbuat demikian, anda boleh pergi ke tab "Fail ditukar" di mana anda melihat semua perubahan anda, pergi ke baris yang anda
+ingin bertanya soalan, dan klik pada simbol "+" untuk menambah ulasan. Setiap kali soalan atau masalah telah diselesaikan,
+anda boleh mengklik pada butang "Selesaikan" komen yang dibuat.
+
+Dengan cara yang sama, pasukan Memeluk Wajah akan membuka ulasan apabila menyemak kod anda. Kami mengesyorkan anda bertanya kebanyakan soalan
+pada GitHub pada PR anda. Untuk beberapa soalan yang sangat umum yang tidak begitu berguna untuk orang ramai, sila ping
+Memeluk pasukan Wajah melalui Slack atau e-mel.
+
+**5. Sesuaikan kod model yang dijana untuk brand_new_bert**
+
+Pada mulanya, kami akan fokus hanya pada model itu sendiri dan tidak mengambil berat tentang tokenizer. Semua kod yang berkaitan sepatutnya
+ditemui dalam fail `src/transformers/models/brand_new_bert/modeling_brand_new_bert.py` dan
+`src/transformers/models/brand_new_bert/configuration_brand_new_bert.py`.
+
+Kini anda akhirnya boleh memulakan pengekodan :). Kod yang dijana dalam
+`src/transformers/models/brand_new_bert/modeling_brand_new_bert.py` akan sama ada mempunyai seni bina yang sama seperti BERT jika
+ia adalah model pengekod sahaja atau BART jika ia adalah model penyahkod pengekod. Pada ketika ini, anda harus mengingatkan diri anda apa
+anda telah belajar pada mulanya tentang aspek teori model: *Bagaimana model berbeza daripada BERT atau
+BART?*". Laksanakan perubahan tersebut yang selalunya bermaksud menukar lapisan *perhatian diri*, susunan penormalan
+lapisan, dsb... Sekali lagi, selalunya berguna untuk melihat seni bina serupa model sedia ada dalam Transformers to
+dapatkan perasaan yang lebih baik tentang cara model anda harus dilaksanakan.
+
+**Perhatikan** bahawa pada ketika ini, anda tidak perlu sangat pasti bahawa kod anda betul atau bersih sepenuhnya. Sebaliknya, ia adalah
+dinasihatkan untuk menambah versi pertama *najis*, salin-tampal kod asal kepada
+`src/transformers/models/brand_new_bert/modeling_brand_new_bert.py` sehingga anda rasa semua kod yang diperlukan adalah
+tambah. Daripada pengalaman kami, adalah lebih cekap untuk menambah versi pertama kod yang diperlukan dan dengan cepat
+memperbaiki/membetulkan kod secara berulang dengan skrip penukaran seperti yang diterangkan dalam bahagian seterusnya. Satu-satunya perkara yang
+yang perlu bekerja pada ketika ini ialah anda boleh membuat instantiate 🤗 Transformers pelaksanaan *brand_new_bert*, *iaitu*
+arahan berikut harus berfungsi:
+
+```python
+from transformers import BrandNewBertModel, BrandNewBertConfig
+
+model = BrandNewBertModel(BrandNewBertConfig())
+```
+
+Perintah di atas akan mencipta model mengikut parameter lalai seperti yang ditakrifkan dalam `BrandNewBertConfig()` dengan
+pemberat rawak, dengan itu memastikan bahawa kaedah `init()` semua komponen berfungsi.
+
+Ambil perhatian bahawa semua pengamulaan rawak harus berlaku dalam kaedah `_init_weights` bagi `BrandnewBertPreTrainedModel` anda
+kelas. Ia harus memulakan semua modul daun bergantung pada pembolehubah konfigurasi. Berikut adalah contoh dengan
+Kaedah `_init_weights` BERT:
+
+```py
+def _init_weights(self, module):
+    """Initialize the weights"""
+    if isinstance(module, nn.Linear):
+        module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+        if module.bias is not None:
+            module.bias.data.zero_()
+    elif isinstance(module, nn.Embedding):
+        module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+        if module.padding_idx is not None:
+            module.weight.data[module.padding_idx].zero_()
+    elif isinstance(module, nn.LayerNorm):
+        module.bias.data.zero_()
+        module.weight.data.fill_(1.0)
+```
+
+Anda boleh mempunyai beberapa lagi skim tersuai jika anda memerlukan permulaan khas untuk beberapa modul. Sebagai contoh, dalam
+`Wav2Vec2ForPreTraining`, dua lapisan linear terakhir perlu mempunyai pemulaan PyTorch biasa `nn.Linear`
+tetapi semua yang lain harus menggunakan permulaan seperti di atas. Ini dikodkan seperti ini:
+
+```py
+def _init_weights(self, module):
+    """Initialize the weights"""
+    if isinstnace(module, Wav2Vec2ForPreTraining):
+        module.project_hid.reset_parameters()
+        module.project_q.reset_parameters()
+        module.project_hid._is_hf_initialized = True
+        module.project_q._is_hf_initialized = True
+    elif isinstance(module, nn.Linear):
+        module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+        if module.bias is not None:
+            module.bias.data.zero_()
+```
+
+Bendera `_is_hf_initialized` digunakan secara dalaman untuk memastikan kami hanya memulakan submodul sekali. Dengan menetapkannya kepada
+`True` untuk `module.project_q` dan `module.project_hid`, kami memastikan permulaan tersuai yang kami lakukan tidak ditindih kemudian,
+fungsi `_init_weights` tidak akan digunakan padanya.
+
+**6. Tulis skrip penukaran**
+
+Seterusnya, anda harus menulis skrip penukaran yang membolehkan anda menukar pusat pemeriksaan yang anda gunakan untuk menyahpepijat *brand_new_bert* dalam
+repositori asal ke pusat pemeriksaan yang serasi dengan pelaksanaan Transformers yang baru anda buat
+*berta_baru_jenama*. Ia tidak dinasihatkan untuk menulis skrip penukaran dari awal, tetapi lebih baik menyemaknya
+skrip penukaran sedia ada dalam 🤗 Transformer untuk satu yang telah digunakan untuk menukar model serupa yang ditulis dalam
+rangka kerja yang sama seperti *brand_new_bert*. Biasanya, sudah cukup untuk menyalin skrip penukaran yang sedia ada dan
+menyesuaikannya sedikit untuk kes penggunaan anda. Jangan teragak-agak untuk meminta pasukan Memeluk Wajah menunjukkan anda kepada perkara yang serupa
+skrip penukaran sedia ada untuk model anda.
+
+- Jika anda mengalihkan model daripada TensorFlow ke PyTorch, titik permulaan yang baik mungkin ialah skrip penukaran BERT [di sini](https://github.com/huggingface/transformers/blob/7acfa95afb8194f8f9c1f4d2c6028224dbed35a2/src_bert/transformers/transformers/transformers/transformers .py#L91)
+- Jika anda mengalihkan model daripada PyTorch ke PyTorch, titik permulaan yang baik mungkin ialah skrip penukaran BART [di sini](https://github.com/huggingface/transformers/blob/main/src/transformers/models/bart/convert_bart_original_pytorch_checkpoint_to_pytorch .py)
+
+Dalam perkara berikut, kami akan menerangkan dengan pantas cara model PyTorch menyimpan pemberat lapisan dan mentakrifkan nama lapisan. Dalam PyTorch, the
+nama lapisan ditakrifkan oleh nama atribut kelas yang anda berikan lapisan. Mari kita tentukan model tiruan dalam
+PyTorch, dipanggil `SimpleModel` seperti berikut:
+
+```python
+from torch import nn
+
+
+class SimpleModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.dense = nn.Linear(10, 10)
+        self.intermediate = nn.Linear(10, 10)
+        self.layer_norm = nn.LayerNorm(10)
+```
+
+Kini kita boleh mencipta contoh definisi model ini yang akan mengisi semua pemberat: `padat`, `perantaraan`,
+`layer_norm` dengan pemberat rawak. Kita boleh mencetak model untuk melihat seni binanya
+
+```python
+model = SimpleModel()
+
+print(model)
+```
+
+Ini akan mencetak perkara berikut:
+
+```
+SimpleModel(
+  (dense): Linear(in_features=10, out_features=10, bias=True)
+  (intermediate): Linear(in_features=10, out_features=10, bias=True)
+  (layer_norm): LayerNorm((10,), eps=1e-05, elementwise_affine=True)
+)
+```
+
+Kita dapat melihat bahawa nama lapisan ditakrifkan oleh nama atribut kelas dalam PyTorch. Anda boleh mencetak berat
+nilai lapisan tertentu:
+
+```python
+print(model.dense.weight.data)
+```
+
+untuk melihat bahawa pemberat telah dimulakan secara rawak
+
+```
+tensor([[-0.0818,  0.2207, -0.0749, -0.0030,  0.0045, -0.1569, -0.1598,  0.0212,
+         -0.2077,  0.2157],
+        [ 0.1044,  0.0201,  0.0990,  0.2482,  0.3116,  0.2509,  0.2866, -0.2190,
+          0.2166, -0.0212],
+        [-0.2000,  0.1107, -0.1999, -0.3119,  0.1559,  0.0993,  0.1776, -0.1950,
+         -0.1023, -0.0447],
+        [-0.0888, -0.1092,  0.2281,  0.0336,  0.1817, -0.0115,  0.2096,  0.1415,
+         -0.1876, -0.2467],
+        [ 0.2208, -0.2352, -0.1426, -0.2636, -0.2889, -0.2061, -0.2849, -0.0465,
+          0.2577,  0.0402],
+        [ 0.1502,  0.2465,  0.2566,  0.0693,  0.2352, -0.0530,  0.1859, -0.0604,
+          0.2132,  0.1680],
+        [ 0.1733, -0.2407, -0.1721,  0.1484,  0.0358, -0.0633, -0.0721, -0.0090,
+          0.2707, -0.2509],
+        [-0.1173,  0.1561,  0.2945,  0.0595, -0.1996,  0.2988, -0.0802,  0.0407,
+          0.1829, -0.1568],
+        [-0.1164, -0.2228, -0.0403,  0.0428,  0.1339,  0.0047,  0.1967,  0.2923,
+          0.0333, -0.0536],
+        [-0.1492, -0.1616,  0.1057,  0.1950, -0.2807, -0.2710, -0.1586,  0.0739,
+          0.2220,  0.2358]]).
+```
+
+Dalam skrip penukaran, anda harus mengisi pemberat yang dimulakan secara rawak itu dengan pemberat yang tepat
+lapisan yang sepadan di pusat pemeriksaan. *Cth.*
+
+```python
+# retrieve matching layer weights, e.g. by
+# recursive algorithm
+layer_name = "dense"
+pretrained_weight = array_of_dense_layer
+
+model_pointer = getattr(model, "dense")
+
+model_pointer.weight.data = torch.from_numpy(pretrained_weight)
+```
+
+Semasa berbuat demikian, anda mesti mengesahkan bahawa setiap berat yang dimulakan secara rawak bagi model PyTorch anda dan yang sepadan
+berat pusat pemeriksaan terlatih betul-betul sepadan dalam kedua-dua **bentuk dan nama**. Untuk berbuat demikian, adalah **perlu** untuk menambah penegasan
+penyata untuk bentuk dan mencetak nama pemberat pusat pemeriksaan. Cth. anda harus menambah pernyataan seperti:
+
+```python
+assert (
+    model_pointer.weight.shape == pretrained_weight.shape
+), f"Pointer shape of random weight {model_pointer.shape} and array shape of checkpoint weight {pretrained_weight.shape} mismatched"
+```
+
+Selain itu, anda juga harus mencetak nama kedua-dua pemberat untuk memastikan ia sepadan, *cth.*
+
+```python
+logger.info(f"Initialize PyTorch weight {layer_name} from {pretrained_weight.name}")
+```
+
+Jika sama ada bentuk atau nama tidak sepadan, anda mungkin menetapkan berat pusat pemeriksaan yang salah kepada secara rawak
+lapisan permulaan pelaksanaan Transformers 🤗.
+
+Bentuk yang salah kemungkinan besar disebabkan oleh tetapan parameter konfigurasi yang salah dalam `BrandNewBertConfig()` yang
+tidak sepadan dengan yang digunakan untuk pusat pemeriksaan yang anda ingin tukar. Walau bagaimanapun, ia juga boleh jadi itu
+Perlaksanaan lapisan PyTorch memerlukan berat untuk ditukar terlebih dahulu.
+
+Akhir sekali, anda juga harus menyemak bahawa **semua** pemberat yang diperlukan dimulakan dan mencetak semua pemberat pusat pemeriksaan itu
+tidak digunakan untuk permulaan bagi memastikan model ditukar dengan betul. Ia adalah benar-benar normal, bahawa
+percubaan penukaran gagal sama ada dengan pernyataan bentuk yang salah atau penetapan nama yang salah. Ini berkemungkinan besar kerana sama ada
+anda menggunakan parameter yang salah dalam `BrandNewBertConfig()`, mempunyai seni bina yang salah dalam 🤗 Transformers
+pelaksanaan, anda mempunyai pepijat dalam fungsi `init()` salah satu komponen Transformers 🤗
+pelaksanaan atau anda perlu menukar satu daripada pemberat pusat pemeriksaan.
+
+Langkah ini hendaklah diulang dengan langkah sebelumnya sehingga semua pemberat pusat pemeriksaan dimuatkan dengan betul dalam
+Model transformer. Setelah memuatkan pusat pemeriksaan dengan betul ke dalam pelaksanaan Transformers, anda kemudian boleh menyimpan
+model di bawah folder pilihan anda `/path/to/converted/checkpoint/folder` yang kemudiannya mengandungi kedua-dua
+Fail `pytorch_model.bin` dan fail `config.json`:
+
+```python
+model.save_pretrained("/path/to/converted/checkpoint/folder")
+```
+
+**7. Laksanakan hantaran hadapan**
+
+Setelah berjaya memuatkan pemberat yang telah dilatih dengan betul ke dalam pelaksanaan Transformers, anda kini harus membuat
+pastikan hantaran hadapan dilaksanakan dengan betul. Dalam [Kenal pasti repositori asal](#34-run-a-pretrained-checkpoint-using-the-original-repository), anda telah pun mencipta skrip yang menjalankan forward
+lulus model menggunakan repositori asal. Sekarang anda harus menulis skrip analog menggunakan 🤗 Transformers
+pelaksanaan bukannya yang asal. Ia sepatutnya kelihatan seperti berikut:
+
+```python
+model = BrandNewBertModel.from_pretrained("/path/to/converted/checkpoint/folder")
+input_ids = [0, 4, 4, 3, 2, 4, 1, 7, 19]
+output = model(input_ids).last_hidden_states
+```
+
+Kemungkinan besar pelaksanaan Transformers dan pelaksanaan model asal tidak memberikan yang tepat
+output yang sama pada kali pertama atau bahawa hantaran hadapan melemparkan ralat. Jangan kecewa - sudah dijangka! pertama,
+anda harus memastikan bahawa hantaran hadapan tidak menimbulkan sebarang ralat. Ia sering berlaku bahawa dimensi yang salah adalah
+digunakan yang membawa kepada ralat *Ketidakpadanan dimensi* atau objek jenis data yang salah digunakan, *cth.* `torch.long`
+bukannya `torch.float32`. Jangan teragak-agak untuk meminta bantuan pasukan Hugging Face, jika anda tidak berjaya menyelesaikannya
+kesilapan tertentu.
+
+Bahagian terakhir untuk memastikan pelaksanaan 🤗 Transformers berfungsi dengan betul adalah untuk memastikan bahawa output adalah
+bersamaan dengan ketepatan `1e-3`. Pertama, anda harus memastikan bahawa bentuk keluaran adalah sama, *iaitu*
+`outputs.shape` harus menghasilkan nilai yang sama untuk skrip pelaksanaan Transformers 🤗 dan yang asal
+pelaksanaan. Seterusnya, anda harus memastikan bahawa nilai output adalah sama juga. Ini antara yang paling sukar
+bahagian menambah model baharu. Kesilapan biasa mengapa output tidak sama ialah:
+
+- Beberapa lapisan tidak ditambahkan, *iaitu* lapisan *pengaktifan* tidak ditambahkan, atau sambungan baki telah dilupakan
+- Perkataan embedding matriks tidak terikat
+- Pembenaman kedudukan yang salah digunakan kerana pelaksanaan asal menggunakan pada offset
+- Keciciran digunakan semasa hantaran hadapan. Untuk membetulkannya pastikan *model.training adalah Palsu* dan tiada keciciran
+  lapisan diaktifkan secara palsu semasa hantaran ke hadapan, *iaitu* lulus *latihan diri* kepada [keciciran fungsi PyTorch](https://pytorch.org/docs/stable/nn.functional.html?highlight=dropout#torch.nn .functional.dropout)
+
+Cara terbaik untuk menyelesaikan masalah biasanya dengan melihat pas ke hadapan bagi pelaksanaan asal dan 🤗
+Pelaksanaan transformer bersebelahan dan semak sama ada terdapat sebarang perbezaan. Sebaik-baiknya, anda harus nyahpepijat/cetak keluar
+output perantaraan kedua-dua pelaksanaan pas hadapan untuk mencari kedudukan tepat dalam rangkaian di mana 🤗
+Pelaksanaan Transformers menunjukkan output yang berbeza daripada pelaksanaan asal. Pertama, pastikan bahawa
+`id_input` berkod keras dalam kedua-dua skrip adalah sama. Seterusnya, sahkan bahawa output transformasi pertama bagi
+`id_input` (biasanya perkataan embeddings) adalah sama. Dan kemudian naik ke lapisan terakhir
+rangkaian. Pada satu ketika, anda akan melihat perbezaan antara kedua-dua pelaksanaan, yang sepatutnya menunjukkan anda kepada pepijat
+dalam pelaksanaan 🤗 Transformers. Daripada pengalaman kami, cara yang mudah dan cekap ialah menambah banyak kenyataan cetakan
+dalam kedua-dua pelaksanaan asal dan 🤗 pelaksanaan Transformers, pada kedudukan yang sama dalam rangkaian
+masing-masing, dan untuk mengalih keluar penyata cetakan yang menunjukkan nilai yang sama untuk pembentangan perantaraan berturut-turut.
+
+Apabila anda yakin bahawa kedua-dua pelaksanaan menghasilkan output yang sama, mengesahkan output dengan
+`torch.allclose(original_output, output, atol=1e-3)`, anda sudah selesai dengan bahagian yang paling sukar! Tahniah - yang
+kerja-kerja yang perlu diselesaikan harus menjadi mudah 😊.
+
+**8. Menambah semua ujian model yang diperlukan**
+
+Pada ketika ini, anda telah berjaya menambah model baharu. Walau bagaimanapun, adalah sangat mungkin model itu belum lagi
+mematuhi sepenuhnya reka bentuk yang diperlukan. Untuk memastikan, pelaksanaannya serasi sepenuhnya dengan 🤗 Transformers, semua
+ujian biasa harus lulus. Pemotong Kuki sepatutnya telah menambah fail ujian secara automatik untuk model anda, mungkin di bawah
+`tests/models/brand_new_bert/test_modeling_brand_new_bert.py` yang sama. Jalankan fail ujian ini untuk mengesahkan bahawa semua perkara biasa
+ujian lulus:
+
+```bash
+pytest tests/models/brand_new_bert/test_modeling_brand_new_bert.py
+```
+
+Setelah membetulkan semua ujian biasa, kini adalah penting untuk memastikan bahawa semua kerja bagus yang telah anda lakukan diuji dengan baik, supaya
+
+- a) Komuniti boleh memahami kerja anda dengan mudah dengan melihat ujian khusus *brand_new_bert*
+- b) Perubahan masa hadapan pada model anda tidak akan memecahkan sebarang ciri penting model.
+
+Pada mulanya, ujian integrasi perlu ditambah. Ujian integrasi tersebut pada dasarnya melakukan perkara yang sama seperti skrip penyahpepijatan
+anda gunakan sebelum ini untuk melaksanakan model kepada 🤗 Transformers. Templat ujian model tersebut telah ditambahkan oleh
+Cookiecutter, dipanggil `BrandNewBertModelIntegrationTests` dan hanya perlu diisi oleh anda. Untuk memastikan bahawa mereka
+ujian sedang berlalu, jalankan
+
+```bash
+RUN_SLOW=1 pytest -sv tests/models/brand_new_bert/test_modeling_brand_new_bert.py::BrandNewBertModelIntegrationTests
+```
+
+<Tip>
+
+Sekiranya anda menggunakan Windows, anda harus menggantikan `RUN_SLOW=1` dengan `SET RUN_SLOW=1`
+
+</Tip>
+
+Kedua, semua ciri yang istimewa untuk *brand_new_bert* hendaklah diuji tambahan dalam ujian berasingan di bawah
+`BrandNewBertModelTester`/``BrandNewBertModelTest`. Bahagian ini sering dilupakan tetapi sangat berguna dalam dua
+cara:
+
+- Ia membantu untuk memindahkan pengetahuan yang telah anda perolehi semasa penambahan model kepada komuniti dengan menunjukkan bagaimana
+  ciri khas *brand_new_bert* harus berfungsi.
+- Penyumbang masa depan boleh menguji perubahan pada model dengan cepat dengan menjalankan ujian khas tersebut.
+
+
+**9. Laksanakan tokenizer**
+
+Seterusnya, kita harus menambah tokenizer *brand_new_bert*. Biasanya, tokenizer adalah setara atau hampir sama dengan an
+tokenizer sedia ada 🤗 Transformers.
+
+Adalah sangat penting untuk mencari/mengekstrak fail tokenizer asal dan menguruskan untuk memuatkan fail ini ke dalam 🤗
+Pelaksanaan pengubah bagi tokenizer.
+
+Untuk memastikan tokenizer berfungsi dengan betul, adalah disyorkan untuk membuat skrip dahulu dalam repositori asal
+yang memasukkan rentetan dan mengembalikan `input_ids``. Ia mungkin kelihatan serupa dengan ini (dalam pseudo-code):
+
+```python
+input_str = "This is a long example input string containing special characters .$?-, numbers 2872 234 12 and words."
+model = BrandNewBertModel.load_pretrained_checkpoint("/path/to/checkpoint/")
+input_ids = model.tokenize(input_str)
+```
+
+Anda mungkin perlu melihat dengan lebih mendalam sekali lagi ke dalam repositori asal untuk mencari fungsi tokenizer yang betul atau anda
+mungkin perlu melakukan perubahan pada klon repositori asal anda untuk hanya mengeluarkan `input_ids`. Setelah menulis
+skrip tokenisasi berfungsi yang menggunakan repositori asal, skrip analog untuk 🤗 Transformers sepatutnya
+dicipta. Ia sepatutnya kelihatan serupa dengan ini:
+
+```python
+from transformers import BrandNewBertTokenizer
+
+input_str = "This is a long example input string containing special characters .$?-, numbers 2872 234 12 and words."
+
+tokenizer = BrandNewBertTokenizer.from_pretrained("/path/to/tokenizer/folder/")
+
+input_ids = tokenizer(input_str).input_ids
+```
+
+Apabila kedua-dua `input_ids` menghasilkan nilai yang sama, sebagai langkah terakhir, fail ujian tokenizer juga harus ditambah.
+
+Serupa dengan fail ujian pemodelan *brand_new_bert*, fail ujian tokenisasi *brand_new_bert* sepatutnya
+mengandungi beberapa ujian penyepaduan berkod keras.
+
+**10. Jalankan ujian integrasi hujung ke hujung**
+
+Setelah menambahkan tokenizer, anda juga harus menambah beberapa ujian penyepaduan hujung ke hujung menggunakan kedua-dua model dan
+tokenizer kepada `tests/models/brand_new_bert/test_modeling_brand_new_bert.py` dalam 🤗 Transformers.
+Ujian sebegini harus menunjukkan pada yang bermakna
+contoh teks-ke-teks bahawa pelaksanaan Transformers 🤗 berfungsi seperti yang diharapkan. Sampel teks-ke-teks yang bermakna boleh
+sertakan *cth.* pasangan terjemahan sumber-ke-sasaran, pasangan artikel-ke-ringkasan, pasangan soalan-ke-jawapan, dsb... Jika tiada
+daripada pusat pemeriksaan yang dialihkan telah diperhalusi pada tugas hiliran, ia cukup untuk hanya bergantung pada ujian model. Didalam
+langkah terakhir untuk memastikan model berfungsi sepenuhnya, anda dinasihatkan supaya menjalankan semua ujian pada GPU. Ia boleh
+kebetulan anda terlupa untuk menambah beberapa pernyataan `.to(self.device)` pada tensor dalaman model, yang dalam
+ujian akan ditunjukkan dalam ralat. Sekiranya anda tidak mempunyai akses kepada GPU, pasukan Hugging Face boleh menguruskannya
+ujian untuk anda.
+
+**11. Tambah Docstring**
+
+Kini, semua fungsi yang diperlukan untuk *brand_new_bert* ditambahkan - anda hampir selesai! Satu-satunya perkara yang perlu ditambah ialah
+docstring yang bagus dan halaman doc. Cookiecutter sepatutnya telah menambah fail templat yang dipanggil
+`docs/source/model_doc/brand_new_bert.mdx` yang perlu anda isi. Pengguna model anda biasanya akan melihat terlebih dahulu
+halaman ini sebelum menggunakan model anda. Oleh itu, dokumentasi mestilah mudah difahami dan ringkas. Ia sangat berguna untuk
+komuniti untuk menambah beberapa *Petua* untuk menunjukkan cara model itu harus digunakan. Jangan teragak-agak untuk ping pasukan Wajah Memeluk
+mengenai docstrings.
+
+Seterusnya, pastikan bahawa docstring yang ditambahkan pada `src/transformers/models/brand_new_bert/modeling_brand_new_bert.py` ialah
+betul dan memasukkan semua input dan output yang diperlukan. Kami mempunyai panduan terperinci tentang menulis dokumentasi dan format docstring kami [di sini](menulis-dokumentasi). Ia sentiasa baik untuk mengingatkan diri sendiri bahawa dokumentasi harus
+diperlakukan sekurang-kurangnya dengan berhati-hati seperti kod dalam 🤗 Transformers kerana dokumentasi biasanya merupakan kenalan pertama
+titik komuniti dengan model.
+
+**Kod refactor**
+
+Bagus, kini anda telah menambahkan semua kod yang diperlukan untuk *brand_new_bert*. Pada ketika ini, anda harus membetulkan beberapa potensi
+gaya kod yang salah dengan menjalankan:
+
+```bash
+make style
+```
+
+dan sahkan bahawa gaya pengekodan anda melepasi semakan kualiti:
+
+```bash
+make quality
+```
+
+Terdapat beberapa ujian reka bentuk yang sangat ketat lain dalam 🤗 Transformer yang mungkin masih gagal, yang muncul dalam
+ujian permintaan tarik anda. Ini selalunya kerana beberapa maklumat yang hilang dalam docstring atau ada yang salah
+menamakan. Pasukan Memeluk Wajah pasti akan membantu anda jika anda terperangkap di sini.
+
+Akhir sekali, adalah idea yang baik untuk memfaktorkan semula kod seseorang selepas memastikan kod itu berfungsi dengan betul. Dengan semua
+ujian lulus, kini adalah masa yang baik untuk menyemak semula kod yang ditambah dan melakukan pemfaktoran semula.
+
+Anda kini telah menyelesaikan bahagian pengekodan, tahniah! 🎉 Anda Hebat! 😎
+
+**12. Muat naik model ke hab model**
+
+Dalam bahagian akhir ini, anda harus menukar dan memuat naik semua pusat pemeriksaan ke hab model dan menambah kad model untuk setiap satu
+pusat pemeriksaan model yang dimuat naik. Anda boleh membiasakan diri dengan fungsi hab dengan membaca [Halaman perkongsian dan muat naik model](model_sharing) kami. Anda harus bekerjasama dengan pasukan Memeluk Wajah di sini untuk memutuskan nama yang sesuai untuk setiap satu
+pusat pemeriksaan dan untuk mendapatkan hak akses yang diperlukan untuk dapat memuat naik model di bawah organisasi pengarang
+*berta_baru_jenama*. Kaedah `push_to_hub`, yang terdapat dalam semua model dalam `transformers`, ialah cara yang cepat dan cekap untuk menolak pusat pemeriksaan anda ke hab. Sedikit coretan ditampal di bawah:
+
+```python
+brand_new_bert.push_to_hub("brand_new_bert")
+# Uncomment the following line to push to an organization.
+# brand_new_bert.push_to_hub("<organization>/brand_new_bert")
+```
+
+Adalah berbaloi untuk meluangkan sedikit masa untuk membuat kad model yang sesuai untuk setiap pusat pemeriksaan. Kad model harus menyerlahkan
+ciri khusus bagi pusat pemeriksaan khusus ini, *cth.* Pada set data manakah tempat pemeriksaan itu
+telah dilatih/ditala dengan baik? Pada tugas hiliran apakah model itu harus digunakan? Dan juga sertakan beberapa kod tentang cara untuk
+menggunakan model dengan betul.
+
+**13. (Pilihan) Tambahkan buku nota**
+
+Menambah buku nota yang mempamerkan secara terperinci cara *brand_new_bert* boleh digunakan untuk inferens dan/atau adalah sangat membantu.
+diperhalusi pada tugas hiliran. Ini tidak wajib untuk menggabungkan PR anda, tetapi sangat berguna untuk komuniti.
+
+**14. Hantar PR anda yang telah selesai**
+
+Anda telah selesai pengaturcaraan sekarang dan boleh beralih ke langkah terakhir, yang menjadikan PR anda digabungkan menjadi utama. Biasanya, yang
+Pasukan Memeluk Wajah sepatutnya telah membantu anda pada ketika ini, tetapi anda perlu meluangkan sedikit masa untuk menyelesaikannya
+PR penerangan yang bagus dan akhirnya menambah komen pada kod anda, jika anda ingin menunjukkan pilihan reka bentuk tertentu kepada anda
+pengulas.
+
+### Kongsi kerja anda!!
+
+Kini, tiba masanya untuk mendapatkan pujian daripada komuniti untuk kerja anda! Menyelesaikan penambahan model adalah perkara utama
+sumbangan kepada Transformers dan seluruh komuniti NLP. Kod anda dan model pra-latihan yang dialihkan pastinya
+digunakan oleh ratusan dan mungkin beribu-ribu pembangun dan penyelidik. Anda harus berbangga dengan kerja anda dan berkongsi
+pencapaian anda bersama masyarakat.
+
+**Anda telah membuat model lain yang sangat mudah untuk diakses oleh semua orang dalam komuniti! 🤯**
