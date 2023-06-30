@@ -1,0 +1,353 @@
+<!--Hak Cipta 2022 Pasukan HuggingFace. Hak cipta terpelihara.
+
+Dilesenkan di bawah Lesen Apache, Versi 2.0 ("Lesen"); anda tidak boleh menggunakan fail ini kecuali dengan mematuhi
+Lesen. Anda boleh mendapatkan salinan Lesen di
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Melainkan diperlukan oleh undang-undang yang terpakai atau dipersetujui secara bertulis, perisian yang diedarkan di bawah Lesen diedarkan pada
+ASAS "SEBAGAIMANA ADANYA", TANPA WARANTI ATAU SEBARANG JENIS SYARAT, sama ada nyata atau tersirat. Lihat Lesen untuk
+-->
+
+# Bagaimana untuk menukar model Transformers kepada TensorFlow?
+
+Mempunyai berbilang rangka kerja yang tersedia untuk digunakan dengan 🤗 Transformers memberikan anda fleksibiliti untuk memainkan kekuatan mereka apabila
+mereka bentuk aplikasi anda, tetapi ini menunjukkan bahawa keserasian mesti ditambah berdasarkan setiap model. Berita baiknya ialah
+menambah keserasian TensorFlow pada model sedia ada adalah lebih mudah daripada [menambah model baharu dari awal](add_new_model)!
+Sama ada anda ingin mempunyai pemahaman yang lebih mendalam tentang model TensorFlow yang besar, membuat sumbangan sumber terbuka yang besar, atau
+dayakan TensorFlow untuk model pilihan anda, panduan ini adalah untuk anda.
+
+Panduan ini memperkasakan anda, ahli komuniti kami, untuk menyumbang berat model TensorFlow dan/atau
+seni bina untuk digunakan dalam 🤗 Transformers, dengan pengawasan minimum daripada pasukan Hugging Face. Menulis model baru
+bukanlah sesuatu yang kecil, tetapi semoga panduan ini akan menjadikan ia kurang seperti rollercoaster 🎢 dan lebih kepada berjalan-jalan di taman 🚶.
+Memanfaatkan pengalaman kolektif kami adalah sangat penting untuk menjadikan proses ini semakin mudah, dan oleh itu kami
+amat menggalakkan anda mencadangkan penambahbaikan pada panduan ini!
+
+Sebelum anda menyelam lebih dalam, anda disyorkan untuk menyemak sumber berikut jika anda baru mengenali 🤗 Transformers:
+- [Ikhtisar umum 🤗 Transformers](tambah_model_baru#general-overview-of-transformers)
+- [Falsafah TensorFlow Memeluk Wajah](https://huggingface.co/blog/tensorflow-philosophy)
+
+Dalam baki panduan ini, anda akan mempelajari perkara yang diperlukan untuk menambah seni bina model TensorFlow baharu, iaitu
+prosedur untuk menukar PyTorch kepada berat model TensorFlow, dan cara untuk menyahpepijat ketidakpadanan dengan cekap merentas ML
+rangka kerja. Mari kita mulakan!
+
+<Petua>
+
+Adakah anda tidak pasti sama ada model yang anda ingin gunakan sudah mempunyai seni bina TensorFlow yang sepadan?
+
+&nbsp;
+
+Semak medan `model_type` bagi `config.json` model pilihan anda
+([contoh](https://huggingface.co/bert-base-uncased/blob/main/config.json#L14)). Jika folder model yang sepadan masuk
+🤗 Transformers mempunyai fail yang namanya bermula dengan "modeling_tf", ini bermakna ia mempunyai TensorFlow yang sepadan
+seni bina ([contoh](https://github.com/huggingface/transformers/tree/main/src/transformers/models/bert)).
+
+</Petua>
+
+
+## Panduan langkah demi langkah untuk menambah kod seni bina model TensorFlow
+
+Terdapat banyak cara untuk mereka bentuk seni bina model yang besar, dan pelbagai cara untuk melaksanakan reka bentuk tersebut. Walau bagaimanapun,
+anda mungkin ingat daripada [gambaran keseluruhan umum 🤗 Transformers](tambah_model_baru#gambaran-umum-pengubah-ubah)
+bahawa kami adalah kumpulan yang mempunyai pendapat - kemudahan penggunaan 🤗 Transformers bergantung pada pilihan reka bentuk yang konsisten. daripada
+pengalaman, kami boleh memberitahu anda beberapa perkara penting tentang menambah model TensorFlow:
+
+- Jangan cipta semula roda! Lebih kerap daripada itu, terdapat sekurang-kurangnya dua pelaksanaan rujukan yang perlu anda semak: the
+PyTorch setara dengan model yang anda laksanakan dan model TensorFlow lain untuk kelas masalah yang sama.
+- Pelaksanaan model yang hebat bertahan dalam ujian masa. Ini tidak berlaku kerana kod itu cantik, tetapi sebaliknya
+kerana kod itu jelas, mudah untuk nyahpepijat dan dibina. Jika anda membuat kehidupan penyelenggara mudah dengan anda
+Pelaksanaan TensorFlow, dengan mereplikasi corak yang sama seperti dalam model TensorFlow lain dan meminimumkan ketidakpadanan
+kepada pelaksanaan PyTorch, anda memastikan sumbangan anda akan bertahan lama.
+- Minta bantuan apabila anda tersekat! Pasukan Transformers sedia membantu, dan kami mungkin telah menemui penyelesaian untuk perkara yang sama
+masalah yang anda hadapi.
+
+Berikut ialah gambaran keseluruhan langkah-langkah yang diperlukan untuk menambah seni bina model TensorFlow:
+1. Pilih model yang anda ingin tukar
+2. Sediakan persekitaran dev transformer
+3. (Pilihan) Memahami aspek teori dan pelaksanaan sedia ada
+4. Melaksanakan seni bina model
+5. Melaksanakan ujian model
+6. Hantar permintaan tarik
+7. (Pilihan) Bina demo dan kongsi dengan dunia
+
+### 1.-3. Sediakan sumbangan model anda
+
+**1. Pilih model yang ingin anda tukar**
+
+Mari kita mulakan dengan asas: perkara pertama yang anda perlu tahu ialah seni bina yang ingin anda tukar. Jika awak
+jangan tertumpu pada seni bina tertentu, meminta cadangan pasukan Transformers 🤗 ialah cara yang bagus untuk
+memaksimumkan impak anda - kami akan membimbing anda ke arah seni bina paling menonjol yang tiada pada TensorFlow
+sebelah. Jika model khusus yang anda ingin gunakan dengan TensorFlow sudah mempunyai pelaksanaan seni bina TensorFlow
+🤗 Transformer tetapi kurang berat, jangan ragu untuk melompat terus ke dalam
+[bahagian penukaran berat](#adding-tensorflow-weights-to-hab)
+daripada halaman ini.
+
+Untuk kesederhanaan, baki panduan ini menganggap anda telah memutuskan untuk menyumbang dengan versi TensorFlow
+*BrandNewBert* (contoh yang sama seperti dalam [panduan](add_new_model) untuk menambah model baharu dari awal).
+
+<Petua>
+
+Sebelum memulakan kerja pada seni bina model TensorFlow, semak semula bahawa tiada usaha berterusan untuk berbuat demikian.
+Anda boleh mencari `BrandNewBert` pada
+[halaman GitHub permintaan tarik](https://github.com/huggingface/transformers/pulls?q=is%3Apr) untuk mengesahkan bahawa tiada
+Permintaan tarik berkaitan TensorFlow.
+
+</Petua>
+
+
+**2. Sediakan persekitaran pembangun transformer**
+
+Setelah memilih seni bina model, buka draf PR untuk menandakan niat anda untuk mengusahakannya. Ikut
+arahan di bawah untuk menyediakan persekitaran anda dan membuka draf PR.
+
+1. Fork [repositori](https://github.com/huggingface/transformers) dengan mengklik pada butang 'Fork' pada
+   halaman repositori. Ini mencipta salinan kod di bawah akaun pengguna GitHub anda.
+
+2. Klonkan garpu `transformers` anda ke cakera setempat anda, dan tambahkan repositori asas sebagai alat kawalan jauh:
+
+```bash
+git clone https://github.com/[your Github handle]/transformers.git
+cd transformers
+git remote add upstream https://github.com/huggingface/transformers.git
+```
+
+3. Sediakan persekitaran pembangunan, contohnya dengan menjalankan arahan berikut:
+
+```bash
+python -m venv .env
+source .env/bin/activate
+pip install -e ".[dev]"
+```
+
+Bergantung pada OS anda, dan memandangkan bilangan kebergantungan pilihan Transformers semakin meningkat, anda mungkin mendapat a
+kegagalan dengan arahan ini. Jika demikian, pastikan anda memasang TensorFlow kemudian lakukan:
+
+```bash
+pip install -e ".[quality]"
+```
+
+**Nota:** Anda tidak perlu memasang CUDA. Membuat model baharu berfungsi pada CPU sudah memadai.
+
+4. Buat cawangan dengan nama deskriptif daripada cawangan utama anda
+
+```bash
+git checkout -b add_tf_brand_new_bert
+```
+
+5. Ambil dan letakkan semula ke utama semasa
+
+```bash
+git fetch upstream
+git rebase upstream/main
+```
+
+6. Tambah fail `.py` kosong dalam `transformers/src/models/brandnewbert/` bernama `modeling_tf_brandnewbert.py`. Ini akan
+menjadi fail model TensorFlow anda.
+
+7. Tolak perubahan pada akaun anda menggunakan:
+
+```bash
+git add .
+git commit -m "initial commit"
+git push -u origin add_tf_brand_new_bert
+```
+
+8. Setelah anda berpuas hati, pergi ke halaman web fork anda di GitHub. Klik pada "Permintaan tarik". Pastikan untuk menambah
+   Pengendali GitHub beberapa ahli pasukan Wajah Pelukan sebagai penyemak, supaya pasukan Wajah Pelukan dimaklumkan untuk
+   perubahan masa hadapan.
+
+9. Tukar PR kepada draf dengan mengklik pada "Tukar kepada draf" di sebelah kanan halaman web permintaan tarik GitHub.
+
+
+Kini anda telah menyediakan persekitaran pembangunan untuk mengalihkan *BrandNewBert* ke TensorFlow dalam 🤗 Transformers.
+
+
+**3. (Pilihan) Fahami aspek teori dan pelaksanaan sedia ada**
+
+Anda harus mengambil sedikit masa untuk membaca kertas *BrandNewBert*, jika kerja deskriptif tersebut wujud. Mungkin ada yang besar
+bahagian kertas yang sukar difahami. Jika ini berlaku, ini tidak mengapa - jangan risau! Matlamatnya ialah
+bukan untuk mendapatkan pemahaman teori yang mendalam tentang kertas itu, tetapi untuk mengekstrak maklumat yang diperlukan yang diperlukan untuk
+melaksanakan semula model dengan berkesan dalam 🤗 Transformers menggunakan TensorFlow. Yang sedang berkata, anda tidak perlu berbelanja juga
+banyak masa pada aspek teori, tetapi lebih fokus kepada aspek praktikal, iaitu dokumentasi model sedia ada
+halaman (cth. [dokumen model untuk BERT](model_doc/bert)).
+
+Selepas anda memahami asas model yang akan anda laksanakan, adalah penting untuk memahami
+pelaksanaan. Ini adalah peluang yang baik untuk mengesahkan bahawa pelaksanaan yang berfungsi sepadan dengan jangkaan anda untuk
+model, serta meramalkan cabaran teknikal di bahagian TensorFlow.
+
+Semestinya anda berasa terharu dengan jumlah maklumat yang baru anda serap. Ia adalah
+pastinya bukan satu keperluan untuk anda memahami semua aspek model pada peringkat ini. Namun begitu, kami amat
+menggalakkan anda untuk mengosongkan sebarang soalan mendesak dalam [forum] kami(https://discuss.huggingface.co/).
+
+
+### 4. Pelaksanaan model
+
+Kini tiba masanya untuk memulakan pengekodan. Titik permulaan yang kami cadangkan ialah fail PyTorch itu sendiri: salin kandungan
+`modeling_brand_new_bert.py` di dalam `src/transformers/models/brand_new_bert/` ke dalam
+`modelling_tf_brand_new_bert.py`. Matlamat bahagian ini adalah untuk mengubah suai fail dan mengemas kini struktur import
+🤗 Transformer supaya anda boleh mengimport `TFBrandNewBert` dan
+`TFBrandNewBert.from_pretrained(model_repo, from_pt=True)` berjaya memuatkan model TensorFlow *BrandNewBert* yang berfungsi.
+
+Malangnya, tiada preskripsi untuk menukar model PyTorch kepada TensorFlow. Anda boleh, bagaimanapun, mengikuti pilihan kami
+petua untuk membuat proses selancar mungkin:
+- Tambah `TF` pada nama semua kelas (cth. `BrandNewBert` menjadi `TFBrandNewBert`).
+- Kebanyakan operasi PyTorch mempunyai penggantian TensorFlow langsung. Contohnya, `torch.nn.Linear` sepadan dengan
+  `tf.keras.layers.Dense`, `torch.nn.Dropout` sepadan dengan `tf.keras.layers.Dropout`, dsb. Jika anda tidak pasti
+  mengenai operasi tertentu, anda boleh menggunakan [dokumentasi TensorFlow](https://www.tensorflow.org/api_docs/python/tf)
+  atau [dokumentasi PyTorch](https://pytorch.org/docs/stable/).
+- Cari corak dalam pangkalan kod Transformers 🤗. Jika anda terjumpa operasi tertentu yang tidak mempunyai langsung
+   penggantian, kemungkinan besar orang lain telah pun mengalami masalah yang sama.
+- Secara lalai, kekalkan nama dan struktur pembolehubah yang sama seperti dalam PyTorch. Ini akan memudahkan untuk menyahpepijat, menjejaki
+   isu, dan tambahkan pembetulan ke bawah.
+- Sesetengah lapisan mempunyai nilai lalai yang berbeza dalam setiap rangka kerja. Contoh yang ketara ialah lapisan normalisasi kelompok
+   epsilon (`1e-5` dalam [PyTorch](https://pytorch.org/docs/stable/generated/torch.nn.BatchNorm2d.html#torch.nn.BatchNorm2d)
+   dan `1e-3` dalam [TensorFlow](https://www.tensorflow.org/api_docs/python/tf/keras/layers/BatchNormalization)).
+   Semak semula dokumentasi!
+- Pembolehubah `nn.Parameter` PyTorch biasanya perlu dimulakan dalam `build()` Lapisan TF. Lihat yang berikut
+   contoh: [PyTorch](https://github.com/huggingface/transformers/blob/655f72a6896c0533b1bdee519ed65a059c2425ac/src/transformers/models/vit_mae/modeling_vit_mae.py#L212) /
+   [TensorFlow](https://github.com/huggingface/transformers/blob/655f72a6896c0533b1bdee519ed65a059c2425ac/src/transformers/models/vit_mae/modeling_tf_vit_mae.py#L220)
+- Jika model PyTorch mempunyai `#copyed from ...` di atas fungsi, kemungkinan model TensorFlow anda juga boleh
+   pinjam fungsi itu daripada seni bina yang disalin daripadanya, dengan mengandaikan ia mempunyai seni bina TensorFlow.
+- Menetapkan atribut `name` dengan betul dalam fungsi TensorFlow adalah penting untuk melakukan pemberat `from_pt=True`
+   pemuatan silang. `name` hampir selalu merupakan nama pembolehubah yang sepadan dalam kod PyTorch. Jika `nama` tidak
+   ditetapkan dengan betul, anda akan melihatnya dalam mesej ralat semasa memuatkan berat model.
+- Logik kelas model asas, `BrandNewBertModel`, sebenarnya akan berada dalam `TFBrandNewBertMainLayer`, sebuah Keras
+   subkelas lapisan ([contoh](https://github.com/huggingface/transformers/blob/4fd32a1f499e45f009c2c0dea4d81c321cba7e02/src/transformers/models/bert/modeling_tf_bert.py#L719)).
+   `TFBrandNewBertModel` hanya akan menjadi pembalut di sekeliling lapisan ini.
+- Model Keras perlu dibina untuk memuatkan pemberat yang telah dilatih. Atas sebab itu, `TFBrandNewBertPreTrainedModel`
+   perlu menyimpan contoh input kepada model, `dummy_inputs`
+   ([contoh](https://github.com/huggingface/transformers/blob/4fd32a1f499e45f009c2c0dea4d81c321cba7e02/src/transformers/models/bert/modeling_tf_bert.py#L916)).
+- Jika anda buntu, minta bantuan - kami di sini untuk membantu anda! 🤗
+
+Selain fail model itu sendiri, anda juga perlu menambah penunjuk pada kelas model dan yang berkaitan
+halaman dokumentasi. Anda boleh melengkapkan bahagian ini sepenuhnya mengikut corak dalam PR lain
+([contoh](https://github.com/huggingface/transformers/pull/18020/files)). Berikut ialah senarai manual yang diperlukan
+perubahan:
+- Sertakan semua kelas awam *BrandNewBert* dalam `src/transformers/__init__.py`
+- Tambahkan kelas *BrandNewBert* pada kelas Auto yang sepadan dalam `src/transformers/models/auto/modeling_tf_auto.py`
+- Sertakan fail pemodelan dalam senarai fail ujian dokumentasi dalam `utils/documentation_tests.txt`
+- Tambahkan kelas pemuatan malas yang berkaitan dengan *BrandNewBert* dalam `src/transformers/utils/dummy_tf_objects.py`
+- Kemas kini struktur import untuk kelas awam dalam `src/transformers/models/brand_new_bert/__init__.py`
+- Tambahkan penunjuk dokumentasi kepada kaedah awam *BrandNewBert* dalam `docs/source/en/model_doc/brand_new_bert.mdx`
+- Tambahkan diri anda pada senarai penyumbang kepada *BrandNewBert* dalam `docs/source/en/model_doc/brand_new_bert.mdx`
+- Akhir sekali, tambahkan tanda hijau ✅ pada lajur TensorFlow *BrandNewBert* dalam `docs/source/en/index.mdx`
+
+Apabila anda berpuas hati dengan pelaksanaan anda, jalankan senarai semak berikut untuk mengesahkan bahawa seni bina model anda adalah
+sedia:
+1. Semua lapisan yang berkelakuan berbeza pada masa kereta api (cth. Keciciran) dipanggil dengan hujah `latihan`, iaitu
+disebarkan sehingga ke peringkat kelas atasan
+2. Anda telah menggunakan `#copyed from ...` bila boleh
+3. `TFBrandNewBertMainLayer` dan semua kelas yang menggunakannya mempunyai fungsi `panggilan` mereka dihiasi dengan `@unpack_inputs`
+4. `TFBrandNewBertMainLayer` dihiasi dengan `@keras_serializable`
+5. Model TensorFlow boleh dimuatkan daripada pemberat PyTorch menggunakan `TFBrandNewBert.from_pretrained(model_repo, from_pt=True)`
+6. Anda boleh memanggil model TensorFlow menggunakan format input yang dijangkakan
+
+
+### 5. Tambah ujian model
+
+Hore, anda telah melaksanakan model TensorFlow! Kini tiba masanya untuk menambah ujian untuk memastikan model anda berkelakuan seperti
+dijangka. Seperti dalam bahagian sebelumnya, kami cadangkan anda mulakan dengan menyalin fail `test_modeling_brand_new_bert.py` dalam
+`tests/models/brand_new_bert/` ke dalam `test_modeling_tf_brand_new_bert.py`, dan teruskan dengan membuat yang diperlukan
+Penggantian TensorFlow. Buat masa ini, dalam semua panggilan `.from_pretrained()`, anda harus menggunakan bendera `from_pt=True` untuk memuatkan
+pemberat PyTorch sedia ada.
+
+Selepas anda selesai, tiba masanya untuk detik kebenaran: jalankan ujian! 😬
+
+```bash
+NVIDIA_TF32_OVERRIDE=0 RUN_SLOW=1 RUN_PT_TF_CROSS_TESTS=1 \
+py.test -vv tests/models/brand_new_bert/test_modeling_tf_brand_new_bert.py
+```
+
+Hasil yang paling mungkin ialah anda akan melihat banyak ralat. Jangan risau, ini sudah dijangka! Menyahpepijat model ML ialah
+terkenal keras, dan bahan utama kejayaan ialah kesabaran (dan `breakpoint()`). Dalam pengalaman kami, yang paling sukar
+masalah timbul daripada ketidakpadanan halus antara rangka kerja ML, yang mana kami mempunyai beberapa petunjuk di penghujung panduan ini.
+Dalam kes lain, ujian umum mungkin tidak terpakai secara langsung pada model anda, dalam hal ini kami mencadangkan penggantian
+di peringkat kelas ujian model. Tanpa mengira isu, jangan teragak-agak untuk meminta bantuan dalam permintaan tarik draf anda jika
+awak tersekat.
+
+Apabila semua ujian lulus, tahniah, model anda hampir sedia untuk ditambahkan ke perpustakaan 🤗 Transformers! 🎉
+
+### 6.-7. Pastikan semua orang boleh menggunakan model anda
+
+**6. Hantar permintaan tarik**
+
+Sebaik sahaja anda selesai dengan pelaksanaan dan ujian, tiba masanya untuk menyerahkan permintaan tarik. Sebelum menolak kod anda,
+jalankan utiliti pemformatan kod kami, `make fixup`   . Ini secara automatik akan membetulkan sebarang isu pemformatan, yang akan menyebabkan
+semakan automatik kami gagal.
+
+Kini tiba masanya untuk menukar permintaan tarik draf anda kepada permintaan tarik sebenar. Untuk berbuat demikian, klik pada "Sedia untuk
+butang semak" dan tambahkan Joao (`@gante`) dan Matt (`@Rocketknight1`) sebagai penyemak. Permintaan tarik model perlu
+sekurang-kurangnya 3 pengulas, tetapi mereka akan menguruskan mencari pengulas tambahan yang sesuai untuk model anda.
+
+Selepas semua penyemak berpuas hati dengan keadaan PR anda, titik tindakan terakhir ialah mengalih keluar bendera `from_pt=True` dalam
+`.from_pretrained()` panggilan. Memandangkan tiada pemberat TensorFlow, anda perlu menambahnya! Semak bahagian
+di bawah untuk arahan tentang cara melakukannya.
+
+Akhir sekali, apabila pemberat TensorFlow digabungkan, anda mempunyai sekurang-kurangnya 3 kelulusan penyemak dan semua semakan CI
+hijau, semak semula ujian secara tempatan buat kali terakhir
+
+```bash
+NVIDIA_TF32_OVERRIDE=0 RUN_SLOW=1 RUN_PT_TF_CROSS_TESTS=1 \
+py.test -vv tests/models/brand_new_bert/test_modeling_tf_brand_new_bert.py
+```
+
+dan kami akan menggabungkan PR anda! Tahniah atas pencapaian 🎉
+
+**7. (Pilihan) Bina demo dan kongsi dengan dunia**
+
+Salah satu bahagian paling sukar tentang sumber terbuka ialah penemuan. Bagaimanakah pengguna lain boleh mengetahui tentang kewujudan anda
+sumbangan TensorFlow yang hebat? Dengan komunikasi yang betul, sudah tentu! 📣
+
+Terdapat dua cara utama untuk berkongsi model anda dengan komuniti:
+- Bina demo. Ini termasuk tunjuk cara Gradio, buku nota dan cara lain yang menyeronokkan untuk mempamerkan model anda. Kami sangat
+   menggalakkan anda menambahkan buku nota pada [demo didorong komuniti] kami (https://huggingface.co/docs/transformers/community).
+- Kongsi cerita di media sosial seperti Twitter dan LinkedIn. Anda harus berbangga dengan kerja anda dan berkongsi
+   pencapaian anda dengan komuniti - model anda kini boleh digunakan oleh beribu-ribu jurutera dan penyelidik di sekeliling
+   dunia 🌍! Kami berbesar hati untuk mengetweet semula siaran anda dan membantu anda berkongsi kerja anda dengan komuniti.
+
+
+## Menambah pemberat TensorFlow pada 🤗 Hub
+
+Dengan mengandaikan bahawa seni bina model TensorFlow tersedia dalam 🤗 Transformers, menukar pemberat PyTorch kepada
+Berat TensorFlow sangat mudah!
+
+Begini cara melakukannya:
+1. Pastikan anda log masuk ke akaun Hugging Face anda di terminal anda. Anda boleh log masuk menggunakan arahan
+   `log masuk huggingface-cli` (anda boleh menemui token akses anda [di sini](https://huggingface.co/settings/tokens))
+2. Jalankan `transformers-cli pt-to-tf --model-name foo/bar`, dengan `foo/bar` ialah nama repositori model
+   mengandungi pemberat PyTorch yang anda ingin tukar
+3. Tag `@joaogante` dan `@Rocketknight1` dalam 🤗 Hub PR arahan di atas baru sahaja dibuat
+
+Itu sahaja! 🎉
+
+
+## Menyahpepijat ketidakpadanan merentas rangka kerja ML 🐛
+
+Pada satu ketika, apabila menambah seni bina baharu atau semasa membuat pemberat TensorFlow untuk seni bina sedia ada, anda
+mungkin menemui ralat yang mengadu tentang ketidakpadanan antara PyTorch dan TensorFlow. Anda mungkin memutuskan untuk membuka
+kod seni bina model untuk kedua-dua rangka kerja, dan mendapati bahawa ia kelihatan sama. Apa yang sedang berlaku? 🤔
+
+Pertama sekali, mari kita bincangkan tentang sebab memahami ketidakpadanan ini penting. Ramai ahli komuniti akan guna 🤗
+Model Transformers keluar dari kotak, dan percaya bahawa model kami berkelakuan seperti yang diharapkan. Apabila terdapat ketidakpadanan yang besar
+antara dua rangka kerja, ia membayangkan bahawa model tidak mengikuti pelaksanaan rujukan untuk sekurang-kurangnya satu
+daripada rangka kerja. Ini mungkin membawa kepada kegagalan senyap, di mana model berjalan tetapi mempunyai prestasi yang lemah. Ini adalah
+boleh dikatakan lebih teruk daripada model yang gagal dijalankan sama sekali! Untuk itu, kami menyasarkan untuk mempunyai rangka kerja yang tidak padan yang lebih kecil daripada
+`1e-5` pada semua peringkat model.
+
+Seperti dalam masalah berangka lain, syaitan berada dalam butirannya. Dan seperti dalam mana-mana kraf berorientasikan perincian, rahsianya
+bahan di sini ialah kesabaran. Berikut ialah aliran kerja cadangan kami apabila anda menemui jenis isu ini:
+1. Cari punca ketidakpadanan. Model yang anda tukar mungkin mempunyai pembolehubah dalaman yang hampir sama sehingga a
+   titik tertentu. Letakkan penyataan `breakpoint()` dalam seni bina dua rangka kerja, dan bandingkan nilai bagi
+   pembolehubah berangka secara atas ke bawah sehingga anda menemui punca masalah.
+2. Sekarang anda telah menentukan punca isu tersebut, hubungi pasukan Transformers 🤗. Ia adalah mungkin
+   bahawa kami pernah melihat masalah yang sama sebelum ini dan boleh memberikan penyelesaian dengan segera. Sebagai sandaran, imbas halaman popular
+   seperti isu StackOverflow dan GitHub.
+3. Jika tiada penyelesaian yang kelihatan, ini bermakna anda perlu pergi lebih dalam. Berita baiknya ialah anda telah menemui
+   isu, supaya anda boleh menumpukan pada arahan yang bermasalah, mengabstraksikan seluruh model! Berita buruknya ialah
+   bahawa anda perlu menceburi pelaksanaan sumber arahan tersebut. Dalam sesetengah kes, anda mungkin menemui a
+   isu dengan pelaksanaan rujukan - jangan menahan diri daripada membuka isu dalam repositori huluan.
+
+Dalam sesetengah kes, dalam perbincangan dengan pasukan Transformers 🤗, kami mungkin mendapati bahawa membetulkan ketidakpadanan adalah tidak dapat dilaksanakan.
+Apabila ketidakpadanan adalah sangat kecil dalam lapisan keluaran model (tetapi berpotensi besar dalam keadaan tersembunyi), kami
+mungkin memutuskan untuk mengabaikannya demi mengedarkan model. CLI `pt-to-tf` yang dinyatakan di atas mempunyai `--max-error`
+bendera untuk mengatasi mesej ralat pada masa penukaran berat.
