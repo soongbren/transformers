@@ -1,0 +1,139 @@
+<!--Hak Cipta 2022 Pasukan HuggingFace. Hak cipta terpelihara.
+
+Dilesenkan di bawah Lesen Apache, Versi 2.0 ("Lesen"); anda tidak boleh menggunakan fail ini kecuali dengan mematuhi
+Lesen. Anda boleh mendapatkan salinan Lesen di
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Melainkan diperlukan oleh undang-undang yang terpakai atau dipersetujui secara bertulis, perisian yang diedarkan di bawah Lesen diedarkan pada
+ASAS "SEBAGAIMANA ADANYA", TANPA WARANTI ATAU SEBARANG JENIS SYARAT, sama ada nyata atau tersirat. Lihat Lesen untuk
+bahasa tertentu yang mengawal kebenaran dan pengehadan di bawah Lesen.
+-->
+
+# Muatkan contoh terlatih dengan AutoClass
+
+Dengan begitu banyak seni bina Transformer yang berbeza, ia boleh mencabar untuk mencipta satu untuk pusat pemeriksaan anda. Sebagai sebahagian daripada falsafah teras Transformers untuk menjadikan perpustakaan mudah, ringkas dan fleksibel untuk digunakan, `AutoClass` secara automatik membuat kesimpulan dan memuatkan seni bina yang betul dari pusat pemeriksaan tertentu. Kaedah `from_pretrained()` membolehkan anda memuatkan model terlatih dengan cepat untuk mana-mana seni bina supaya anda tidak perlu menumpukan masa dan sumber untuk melatih model dari awal. Menghasilkan jenis kod pemeriksaan-agnostik ini bermakna jika kod anda berfungsi untuk satu pusat pemeriksaan, ia akan berfungsi dengan pusat pemeriksaan lain - selagi ia dilatih untuk tugas yang serupa - walaupun seni bina berbeza.
+
+<Petua>
+
+Ingat, seni bina merujuk kepada rangka model dan pusat pemeriksaan ialah pemberat untuk seni bina tertentu. Contohnya, [BERT](https://huggingface.co/bert-base-uncased) ialah seni bina, manakala `bert-base-uncased` ialah pusat pemeriksaan. Model ialah istilah umum yang boleh bermaksud sama ada seni bina atau pusat pemeriksaan.
+
+</Petua>
+
+Dalam tutorial ini, belajar untuk:
+
+* Muatkan tokenizer yang telah dilatih.
+* Muatkan pemproses imej terlatih
+* Muatkan pengekstrak ciri yang telah dilatih.
+* Muatkan pemproses terlatih.
+* Muatkan model terlatih.
+
+## AutoTokenizer
+
+Hampir setiap tugas NLP bermula dengan tokenizer. Tokenizer menukar input anda kepada format yang boleh diproses oleh model.
+
+Muatkan tokenizer dengan [`AutoTokenizer.from_pretrained`]:
+
+```py
+>>> from transformers import AutoTokenizer
+
+>>> tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+```
+
+Kemudian tandakan input anda seperti yang ditunjukkan di bawah:
+
+```py
+>>> sequence = "In a hole in the ground there lived a hobbit."
+>>> print(tokenizer(sequence))
+{'input_ids': [101, 1999, 1037, 4920, 1999, 1996, 2598, 2045, 2973, 1037, 7570, 10322, 4183, 1012, 102], 
+ 'token_type_ids': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+ 'attention_mask': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}
+```
+
+## AutoImageProcessor
+
+Untuk tugas penglihatan, pemproses imej memproses imej ke dalam format input yang betul.
+
+```py
+>>> from transformers import AutoImageProcessor
+
+>>> image_processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224")
+```
+
+
+## AutoFeatureExtractor
+
+Untuk tugasan audio, pengekstrak ciri memproses isyarat audio format input yang betul.
+
+Muatkan pengekstrak ciri dengan [`AutoFeatureExtractor.from_pretrained`]:
+
+```py
+>>> from transformers import AutoFeatureExtractor
+
+>>> feature_extractor = AutoFeatureExtractor.from_pretrained(
+...     "ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition"
+... )
+```
+
+## AutoPemproses
+
+Tugas multimodal memerlukan pemproses yang menggabungkan dua jenis alat prapemprosesan. Sebagai contoh, model [LayoutLMV2](model_doc/layoutlmv2) memerlukan pemproses imej untuk mengendalikan imej dan tokenizer untuk mengendalikan teks; pemproses menggabungkan kedua-duanya.
+
+Muatkan pemproses dengan [`AutoProcessor.from_pretrained`]:
+
+```py
+>>> from transformers import AutoProcessor
+
+>>> processor = AutoProcessor.from_pretrained("microsoft/layoutlmv2-base-uncased")
+```
+
+# AutoModel
+
+<frameworkcontent>
+<pt>
+Akhir sekali, kelas `AutoModelFor` membenarkan anda memuatkan model terlatih untuk tugasan tertentu (lihat [di sini](model_doc/auto) untuk senarai lengkap tugasan yang tersedia). Sebagai contoh, muatkan model untuk klasifikasi jujukan dengan [`AutoModelForSequenceClassification.from_pretrained`]:
+
+```py
+>>> from transformers import AutoModelForSequenceClassification
+
+>>> model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased")
+```
+
+Gunakan semula pusat pemeriksaan yang sama dengan mudah untuk memuatkan seni bina untuk tugasan yang berbeza:
+
+```py
+>>> from transformers import AutoModelForTokenClassification
+
+>>> model = AutoModelForTokenClassification.from_pretrained("distilbert-base-uncased")
+```
+
+<Amaran petua={true}>
+
+Untuk model PyTorch, kaedah `from_pretrained()` menggunakan `torch.load()` yang secara dalaman menggunakan `acar` dan diketahui tidak selamat. Secara umum, jangan sekali-kali memuatkan model yang mungkin datang daripada sumber yang tidak dipercayai, atau yang mungkin telah diusik. Risiko keselamatan ini dikurangkan sebahagiannya untuk model awam yang dihoskan pada Hab Wajah Memeluk, yang [diimbas untuk perisian hasad](https://huggingface.co/docs/hub/security-malware) pada setiap komitmen. Lihat [dokumentasi Hub](https://huggingface.co/docs/hub/security) untuk amalan terbaik seperti [pengesahan komitmen yang ditandatangani](https://huggingface.co/docs/hub/security-gpg#signing-commits -dengan-gpg) dengan GPG.
+
+Pusat pemeriksaan TensorFlow dan Flax tidak terjejas dan boleh dimuatkan dalam seni bina PyTorch menggunakan kwarg `from_tf` dan `from_flax` untuk kaedah `from_pretrained` untuk memintas isu ini.
+
+</Petua>
+
+Secara umumnya, kami mengesyorkan menggunakan kelas `AutoTokenizer` dan kelas `AutoModelFor` untuk memuatkan contoh model yang telah dilatih. Ini akan memastikan anda memuatkan seni bina yang betul setiap kali. Dalam [tutorial](prapemprosesan) seterusnya, ketahui cara menggunakan tokenizer, pemproses imej, pengekstrak ciri dan pemproses anda yang baru dimuatkan untuk mempraproses set data untuk penalaan halus.
+</pt>
+<tf>
+Akhir sekali, kelas `TFAutoModelFor` membenarkan anda memuatkan model terlatih untuk tugasan tertentu (lihat [di sini](model_doc/auto) untuk senarai lengkap tugasan yang tersedia). Sebagai contoh, muatkan model untuk klasifikasi jujukan dengan [`TFAutoModelForSequenceClassification.from_pretrained`]:
+
+```py
+>>> from transformers import TFAutoModelForSequenceClassification
+
+>>> model = TFAutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased")
+```
+
+Gunakan semula pusat pemeriksaan yang sama dengan mudah untuk memuatkan seni bina untuk tugasan yang berbeza:
+
+```py
+>>> from transformers import TFAutoModelForTokenClassification
+
+>>> model = TFAutoModelForTokenClassification.from_pretrained("distilbert-base-uncased")
+```
+
+Secara umumnya, kami mengesyorkan menggunakan kelas `AutoTokenizer` dan kelas `TFAutoModelFor` untuk memuatkan contoh model yang telah dilatih. Ini akan memastikan anda memuatkan seni bina yang betul setiap kali. Dalam [tutorial](prapemprosesan) seterusnya, ketahui cara menggunakan tokenizer, pemproses imej, pengekstrak ciri dan pemproses anda yang baru dimuatkan untuk mempraproses set data untuk penalaan halus.
+</tf>
+</frameworkcontent>
