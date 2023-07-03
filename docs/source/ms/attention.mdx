@@ -1,0 +1,57 @@
+<!--Hak Cipta 2023 Pasukan HuggingFace. Hak cipta terpelihara.
+
+Dilesenkan di bawah Lesen Apache, Versi 2.0 ("Lesen"); anda tidak boleh menggunakan fail ini kecuali dengan mematuhi
+Lesen. Anda boleh mendapatkan salinan Lesen di
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Melainkan diperlukan oleh undang-undang yang terpakai atau dipersetujui secara bertulis, perisian yang diedarkan di bawah Lesen diedarkan pada
+ASAS "SEBAGAIMANA ADANYA", TANPA WARANTI ATAU SEBARANG JENIS SYARAT, sama ada nyata atau tersirat. Lihat Lesen untuk
+bahasa tertentu yang mengawal kebenaran dan pengehadan di bawah Lesen.
+-->
+
+# Mekanisme perhatian
+
+Kebanyakan model pengubah menggunakan perhatian penuh dalam erti kata bahawa matriks perhatian adalah segi empat sama. Ia boleh menjadi besar
+kesesakan pengiraan apabila anda mempunyai teks yang panjang. Longformer dan reformer adalah model yang cuba menjadi lebih cekap dan
+gunakan versi jarang matriks perhatian untuk mempercepatkan latihan.
+
+## perhatian LSH
+
+[Reformer](#reformer) menggunakan perhatian LSH. Dalam softmax(QK^t), hanya elemen terbesar (dalam softmax
+dimensi) matriks QK^t akan memberi sumbangan berguna. Jadi untuk setiap pertanyaan q dalam Q, kita boleh mempertimbangkan sahaja
+kekunci k dalam K yang hampir dengan q. Fungsi cincang digunakan untuk menentukan sama ada q dan k adalah hampir. Topeng perhatian ialah
+diubah suai untuk menutup token semasa (kecuali pada kedudukan pertama), kerana ia akan memberikan pertanyaan dan kunci yang sama (jadi
+sangat serupa antara satu sama lain). Memandangkan cincang boleh menjadi rawak sedikit, beberapa fungsi cincang digunakan dalam amalan
+(ditentukan oleh parameter n_rounds) dan kemudian dipuratakan bersama.
+
+## Perhatian tempatan
+
+[Longformer](#longformer) menggunakan perhatian setempat: selalunya, konteks setempat (mis., apakah dua token kepada
+kiri dan kanan?) sudah cukup untuk mengambil tindakan untuk token yang diberikan. Juga, dengan menyusun lapisan perhatian yang mempunyai kecil
+tetingkap, lapisan terakhir akan mempunyai medan penerimaan lebih daripada sekadar token dalam tetingkap, membolehkan mereka membina
+representasi keseluruhan ayat.
+
+Beberapa token input yang diprapilih juga diberi perhatian global: untuk beberapa token tersebut, matriks perhatian boleh mengakses
+semua token dan proses ini adalah simetri: semua token lain mempunyai akses kepada token khusus tersebut (di atas token dalam
+tingkap tempatan mereka). Ini ditunjukkan dalam Rajah 2d kertas, lihat di bawah untuk contoh topeng perhatian:
+
+<div class="flex justify-center">
+    <img scale="50 %" align="center" src="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/local_attention_mask.png"/>
+</div>
+
+Menggunakan matriks perhatian dengan parameter yang kurang kemudian membolehkan model mempunyai input yang mempunyai jujukan yang lebih besar
+panjang.
+
+## Helah lain
+
+### Pengekodan kedudukan paksi
+
+[Reformer](#reformer) menggunakan pengekodan kedudukan paksi: dalam model pengubah tradisional, pengekodan kedudukan
+E ialah matriks bersaiz \\(l\\) dengan \\(d\\), \\(l\\) ialah panjang jujukan dan \\(d\\) dimensi bagi
+keadaan tersembunyi. Jika anda mempunyai teks yang sangat panjang, matriks ini boleh menjadi besar dan mengambil terlalu banyak ruang pada GPU. Untuk meringankan
+bahawa, pengekodan kedudukan paksi terdiri daripada memfaktorkan matriks besar E dalam dua matriks E1 dan E2 yang lebih kecil, dengan
+dimensi \\(l_{1} \times d_{1}\\) dan \\(l_{2} \times d_{2}\\), supaya \\(l_{1} \times l_{2} = l\\) dan
+\\(d_{1} + d_{2} = d\\) (dengan produk untuk panjang, ini akhirnya menjadi lebih kecil). Pembenaman untuk masa
+langkah \\(j\\) dalam E diperoleh dengan menggabungkan benam untuk langkah masa \\(j \% l1\\) dalam E1 dan \\(j // l1\\)
+dalam E2.
